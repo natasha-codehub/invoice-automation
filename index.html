@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Invoice Automation System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #0a0e1a;
+        --surface: #111827;
+        --surface2: #1a2332;
+        --border: #1f2937;
+        --border2: #374151;
+        --accent: #6366f1;
+        --accent-dim: #4f46e5;
+        --green: #10b981;
+        --green-dim: #059669;
+        --amber: #f59e0b;
+        --amber-dim: #d97706;
+        --red: #ef4444;
+        --red-dim: #dc2626;
+        --purple: #8b5cf6;
+        --muted: #6b7280;
+        --text: #f9fafb;
+        --text-dim: #9ca3af;
+        --font: 'IBM Plex Mono', 'Courier New', monospace;
+      }
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      html, body, #root {
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: var(--bg); }
+      ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+      button { font-family: var(--font); cursor: pointer; }
+      input, select { font-family: var(--font); }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
