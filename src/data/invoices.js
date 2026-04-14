@@ -1,0 +1,157 @@
+// 8 sample invoices covering all routing scenarios
+export const sampleInvoices = [
+  {
+    id: 'INV-001',
+    scenario: 'Clean invoice — all checks pass',
+    invoiceNumber: 'INV-001',
+    vendorName: 'Acme Supplies Ltd',
+    poNumber: 'PO-2024-001',
+    date: '2024-03-15',
+    lineItems: [
+      { desc: 'Office supplies bundle', qty: 10, unit: 800, total: 8000 },
+      { desc: 'Stationery pack',        qty: 5,  unit: 400, total: 2000 },
+    ],
+    subtotal: 10000,
+    tax: 1800,
+    total: 11800,
+    goodsReceipt: true,
+    duplicate: false,
+  },
+  {
+    id: 'INV-002',
+    scenario: 'Vendor alias — "Microsoft Corp" → auto-corrected',
+    invoiceNumber: 'INV-002',
+    vendorName: 'Microsoft Corp',
+    poNumber: 'PO-2024-001',
+    date: '2024-03-18',
+    lineItems: [
+      { desc: 'Microsoft 365 Business', qty: 10, unit: 1000, total: 10000 },
+    ],
+    subtotal: 10000,
+    tax: 1800,
+    total: 11800,
+    goodsReceipt: true,
+    duplicate: false,
+  },
+  {
+    id: 'INV-003',
+    scenario: 'PO format with spaces — "PO 2024 002" → auto-corrected',
+    invoiceNumber: 'INV-003',
+    vendorName: 'AWS Inc',
+    poNumber: 'PO 2024 002',
+    date: '2024-03-20',
+    lineItems: [
+      { desc: 'EC2 compute instances', qty: 1, unit: 5000, total: 5000 },
+    ],
+    subtotal: 5000,
+    tax: 900,
+    total: 5900,
+    goodsReceipt: true,
+    duplicate: false,
+  },
+  {
+    id: 'INV-004',
+    scenario: 'Line items 3% over PO — human review',
+    invoiceNumber: 'INV-004',
+    vendorName: 'Adobe Systems Inc',
+    poNumber: 'PO-2024-005',
+    date: '2024-03-22',
+    lineItems: [
+      { desc: 'Adobe Creative Cloud',  qty: 8, unit: 350, total: 2800 },
+      { desc: 'Adobe Acrobat Pro',     qty: 1, unit: 496, total: 496 },
+    ],
+    subtotal: 3296,
+    tax: 593.28,
+    total: 3889.28,
+    goodsReceipt: true,
+    duplicate: false,
+    // PO-2024-005 amount is ₹3200; invoice total ₹3296 = 3% over
+  },
+  {
+    id: 'INV-005',
+    scenario: 'Goods receipt pending — human review',
+    invoiceNumber: 'INV-005',
+    vendorName: 'Zoom Video Communications',
+    poNumber: 'PO-2024-004',
+    date: '2024-03-25',
+    lineItems: [
+      { desc: 'Zoom Business seats x50', qty: 50, unit: 240, total: 12000 },
+    ],
+    subtotal: 12000,
+    tax: 2160,
+    total: 14160,
+    goodsReceipt: false,
+    duplicate: false,
+  },
+  {
+    id: 'INV-006',
+    scenario: 'Duplicate invoice — auto-rejected',
+    invoiceNumber: 'INV-006',
+    vendorName: 'Salesforce Inc',
+    poNumber: 'PO-2024-006',
+    date: '2024-03-10',
+    lineItems: [
+      { desc: 'Salesforce Enterprise CRM', qty: 1, unit: 6750, total: 6750 },
+    ],
+    subtotal: 6750,
+    tax: 1215,
+    total: 7965,
+    goodsReceipt: true,
+    duplicate: true,
+  },
+  {
+    id: 'INV-007',
+    scenario: 'Unknown vendor — auto-rejected',
+    invoiceNumber: 'INV-007',
+    vendorName: 'Phantom Solutions Pvt Ltd',
+    poNumber: 'PO-2024-001',
+    date: '2024-03-28',
+    lineItems: [
+      { desc: 'Consulting services', qty: 1, unit: 10000, total: 10000 },
+    ],
+    subtotal: 10000,
+    tax: 1800,
+    total: 11800,
+    goodsReceipt: true,
+    duplicate: false,
+  },
+  {
+    id: 'INV-008',
+    scenario: 'Missing invoice number + PO — auto-rejected',
+    invoiceNumber: '',
+    vendorName: 'Oracle Corporation',
+    poNumber: '',
+    date: '2024-03-30',
+    lineItems: [
+      { desc: 'Oracle DB license', qty: 1, unit: 9000, total: 9000 },
+    ],
+    subtotal: 9000,
+    tax: 1620,
+    total: 10620,
+    goodsReceipt: true,
+    duplicate: false,
+  },
+];
+
+// ─── Historical STP trend (8 weeks) ─────────────────────────────────────────
+// Baseline (third-party tool): ~38% STP. Weekly improvement driven by exception analysis.
+export const weeklyEvalData = [
+  { week: 'W1', stpPct: 38, label: 'Week 1' },
+  { week: 'W2', stpPct: 45, label: 'Week 2' },
+  { week: 'W3', stpPct: 54, label: 'Week 3' },
+  { week: 'W4', stpPct: 62, label: 'Week 4' },
+  { week: 'W5', stpPct: 71, label: 'Week 5' },
+  { week: 'W6', stpPct: 78, label: 'Week 6' },
+  { week: 'W7', stpPct: 85, label: 'Week 7' },
+  { week: 'W8', stpPct: 91, label: 'Week 8' },
+];
+
+// ─── Exception signal by vendor ──────────────────────────────────────────────
+// High exception volume → triggers custom normalisation rule, not queue growth
+export const exceptionByVendor = [
+  { vendor: 'Salesforce',  count: 14, type: 'Amount Variance',    action: 'PO amendment workflow triggered' },
+  { vendor: 'Adobe',       count: 9,  type: 'PO Format',          action: 'Alias rule added to normaliser' },
+  { vendor: 'Zoom',        count: 7,  type: 'Goods Receipt Lag',  action: 'Receipt confirmation SLA added' },
+  { vendor: 'AWS',         count: 5,  type: 'Missing Fields',     action: 'Vendor portal integration planned' },
+  { vendor: 'Microsoft',   count: 3,  type: 'Name Variant',       action: 'Alias map updated — resolved' },
+];
