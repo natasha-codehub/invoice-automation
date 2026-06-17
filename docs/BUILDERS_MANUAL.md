@@ -13,7 +13,7 @@
 |---|---|
 | **Current phase** | Phase B ✓ complete (browser-verified) → next is **Phase C** |
 | **Last worked** | 2026-06-17 (Phase B built: extraction inspector + consistency gate) |
-| **Next action** | Phase C · Step C1 — `src/data/erpCatalog.js` (see §4) |
+| **Next action** | (1) Decide the Invoice Processor tab fork (§6); (2) Phase C · C1 — `src/data/erpCatalog.js` (see §4) |
 | **Dev server** | `npm run dev` → http://localhost:5173 |
 | **Verify a change** | run app in browser (system Chrome via playwright-core), screenshot the surface — never "tests pass" |
 
@@ -247,6 +247,7 @@ Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.
 ---
 
 ## 6. Open decisions log (append as they come up)
+- [ ] **Invoice Processor tab role** (raised 2026-06-17): now overlaps Batch Pipeline (same DetailPanel, smaller list). Unique value to preserve = tolerance dial (live re-route), live drop-to-extract, engine selector. Options — **A** repurpose as a Single-Invoice / Live lane reusing the new stepper (recommended); **B** merge those controls into Batch Pipeline (dial re-runs the whole funnel) & retire the tab; **C** relabel only. Decide before/with Phase C.
 - [ ] PDF renderer: `pdf.js` (real, heavier) vs `<embed>`/`<iframe>` (simple, browser-native)?
 - [ ] Mock "goods receipt" data source for three-way match — inline in catalog or separate file?
 - [ ] Worklist virtualization: hand-rolled windowing vs a tiny lib (keep zero-dep ethos?).
