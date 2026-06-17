@@ -5,13 +5,16 @@ import { DEMO_MATHESON } from './utils/mockExtractor.js';
 import { runExtraction, PROVIDERS, getProvider } from './utils/extraction/providers.js';
 import { inputFiles, inputFileCount } from './data/inputInvoices.js';
 import { generateBatch } from './pipeline/generateBatch.js';
+import { runPipeline } from './pipeline/runPipeline.js';
+import { aggregateBatch } from './pipeline/aggregateBatch.js';
 import InvoiceList from './components/InvoiceList.jsx';
 import DetailPanel from './components/DetailPanel.jsx';
 import EvalDashboard from './components/EvalDashboard.jsx';
 import BatchFunnel from './components/BatchFunnel.jsx';
 import Worklist from './components/Worklist.jsx';
 import InvoiceStepper from './components/InvoiceStepper.jsx';
-const TABS = ['Invoice Processor', 'Batch Pipeline', 'AI Eval & STP Trend'];
+import ExtractionInspector from './components/ExtractionInspector.jsx';
+const TABS = ['Batch Pipeline', 'Invoice Processor', 'AI Eval & STP Trend'];
 const TOLERANCES = [1, 2, 3, 5];
 
 const BUCKET_ORDER = ['STRAIGHT_THROUGH', 'AUTO_CORRECTED', 'HUMAN_REVIEW', 'AUTO_REJECTED'];
@@ -56,21 +59,72 @@ export default function App() {
   // Persist the chosen extraction engine (Layer-1 seam selection)
   useEffect(() => { localStorage.setItem('extractionEngine', engine); }, [engine]);
 
-  // ── Batch Pipeline (Phase A): one mock intake batch, 3 zoom levels ──
+  // ── Batch Pipeline (Phase A/B): one mock intake batch, 3 zoom levels ──
   const pipeline = useMemo(() => generateBatch(1000, 2), []);
   const [worklistFilter, setWorklistFilter] = useState(null);
   const [selectedPipelineId, setSelectedPipelineId] = useState(null);
   const [activeStage, setActiveStage] = useState(null);
+  const [patched, setPatched] = useState({}); // id → re-piped PipelineInvoice (edits/re-runs)
+
+  // Apply edits/re-runs on top of the generated batch; funnel reflects them live.
+  const displayInvoices = useMemo(
+    () => pipeline.invoices.map(inv => patched[inv.id] || inv),
+    [pipeline, patched],
+  );
+  const batch = useMemo(() => aggregateBatch(displayInvoices, pipeline.batch.id), [displayInvoices, pipeline]);
 
   const filteredBatch = useMemo(() => {
-    if (!worklistFilter) return pipeline.invoices;
-    return pipeline.invoices.filter(inv => inv.stages[worklistFilter.stage]?.status === worklistFilter.status);
-  }, [pipeline, worklistFilter]);
+    if (!worklistFilter) return displayInvoices;
+    return displayInvoices.filter(inv => inv.stages[worklistFilter.stage]?.status === worklistFilter.status);
+  }, [displayInvoices, worklistFilter]);
 
   const selectedPinv = useMemo(
-    () => pipeline.invoices.find(inv => inv.id === selectedPipelineId) || null,
-    [pipeline, selectedPipelineId],
+    () => displayInvoices.find(inv => inv.id === selectedPipelineId) || null,
+    [displayInvoices, selectedPipelineId],
   );
+
+  // Re-pipe an invoice after a human edit / accept / re-extract, keeping human + engine traces.
+  const repipeWith = useCallback((cur, ext, trace, accept = false) => {
+    const carried = (cur.traces || []).filter(t => {
+      const a = String(t.actor || '');
+      return a.startsWith('human') || a.startsWith('engine');
+    });
+    const repiped = runPipeline(ext, 2, cur.batchId, { acceptExtract: accept, extraTraces: [...carried, trace] });
+    setPatched(p => ({ ...p, [cur.id]: repiped }));
+  }, []);
+
+  const onEditField = useCallback((field, value) => {
+    const cur = selectedPinv;
+    if (!cur?.extraction) return;
+    const ext = { ...cur.extraction, [field]: value };
+    if (field === 'vendorRaw') ext.vendorName = value;
+    const confKey = field === 'vendorRaw' ? 'vendor' : field;
+    ext.fieldConfidence = { ...(cur.extraction.fieldConfidence || {}), [confKey]: 1 }; // human-verified
+    repipeWith(cur, ext, { field, actor: 'human:natasha', to: String(value), message: `Edited ${field} → ${value}`, reversible: true });
+  }, [selectedPinv, repipeWith]);
+
+  const onAcceptExtract = useCallback(() => {
+    const cur = selectedPinv;
+    if (!cur?.extraction) return;
+    repipeWith(cur, { ...cur.extraction }, { field: 'extract', actor: 'human:natasha', message: 'Accepted extraction', reversible: false }, true);
+  }, [selectedPinv, repipeWith]);
+
+  const onReextract = useCallback(async () => {
+    const cur = selectedPinv;
+    if (!cur?.extraction) return;
+    setExtractError('');
+    try {
+      const ex = await runExtraction(engine, null, { sourceName: cur.sourceFile, url: cur.sourceUrl });
+      const ext = {
+        ...cur.extraction, ...ex,
+        id: cur.id, vendorName: ex.vendorRaw || cur.extraction.vendorName,
+        sourceUrl: cur.sourceUrl, sourceFile: cur.sourceFile, scenario: cur.scenario,
+      };
+      repipeWith(cur, ext, { field: 'extract', actor: `engine:${ex.extractionEngineId}`, message: `Re-extracted with ${ex.extractionEngine}`, reversible: true });
+    } catch (err) {
+      setExtractError(err.message || 'Re-extraction failed');
+    }
+  }, [selectedPinv, engine, repipeWith]);
 
   // Re-run router whenever tolerance or live invoices change
   useEffect(() => {
@@ -115,7 +169,7 @@ export default function App() {
     };
     setLiveInvoices(prev => [liveInv, ...prev]);
     setSelectedIdx(0);
-    setActiveTab(0);
+    setActiveTab(1);
   }, []);
 
   // Run a bundled /input file through the selected engine and inject the result.
@@ -135,7 +189,7 @@ export default function App() {
   const runDemo = useCallback(async () => {
     if (isExtracting) return;
     setIsExtracting(true);
-    setActiveTab(0);
+    setActiveTab(1);
     setExtractError('');
     startProgressAnimation();
     await new Promise(r => setTimeout(r, 500));
@@ -175,7 +229,7 @@ export default function App() {
   const ingestOne = useCallback(async (f) => {
     if (isExtracting) return;
     setIsExtracting(true);
-    setActiveTab(0);
+    setActiveTab(1);
     setExtractError('');
     startProgressAnimation();
     try {
@@ -194,7 +248,7 @@ export default function App() {
   const ingestInput = useCallback(async () => {
     if (isExtracting) return;
     setIsExtracting(true);
-    setActiveTab(0);
+    setActiveTab(1);
     setExtractError('');
     try {
       for (const f of [...inputFiles].reverse()) {
@@ -270,8 +324,8 @@ export default function App() {
       {/* Tab content */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
 
-        {/* ── Tab 0: Invoice Processor ── */}
-        {activeTab === 0 && (
+        {/* ── Tab 1: Invoice Processor ── */}
+        {activeTab === 1 && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
             {/* Toolbar */}
@@ -485,11 +539,11 @@ export default function App() {
           </div>
         )}
 
-        {/* ── Tab 1: Batch Pipeline ── */}
-        {activeTab === 1 && (
+        {/* ── Tab 0: Batch Pipeline ── */}
+        {activeTab === 0 && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <BatchFunnel
-              batch={pipeline.batch}
+              batch={batch}
               activeFilter={worklistFilter}
               onSegmentClick={(stage, status) => {
                 setWorklistFilter({ stage, status });
@@ -499,12 +553,12 @@ export default function App() {
             <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
               <Worklist
                 invoices={filteredBatch}
-                totalCount={pipeline.invoices.length}
+                totalCount={displayInvoices.length}
                 selectedId={selectedPipelineId}
                 onSelect={(id) => {
                   setSelectedPipelineId(id);
-                  const pinv = pipeline.invoices.find(i => i.id === id);
-                  setActiveStage(pinv?.stoppedAt || null);
+                  const pinv = displayInvoices.find(i => i.id === id);
+                  setActiveStage(pinv?.extraction ? 'extract' : (pinv?.stoppedAt || null));
                 }}
                 filter={worklistFilter}
                 onClearFilter={() => setWorklistFilter(null)}
@@ -513,15 +567,29 @@ export default function App() {
                 {selectedPinv ? (
                   <>
                     <InvoiceStepper pinv={selectedPinv} activeStage={activeStage} onStageClick={setActiveStage} />
-                    <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                      {selectedPinv.routed ? (
-                        <DetailPanel result={selectedPinv.routed} />
-                      ) : (
-                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13, padding: 24, textAlign: 'center' }}>
-                          Synthetic batch invoice — full extraction &amp; validation detail is available for the 12 real invoices (samples + /input). Phase B/C add the deep inspector.
-                        </div>
-                      )}
-                    </div>
+                    {extractError && (
+                      <div style={{ margin: '0 18px 8px', padding: '8px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 6, color: '#b91c1c', fontSize: 12 }}>
+                        ⚠ {extractError}
+                      </div>
+                    )}
+                    {activeStage === 'extract' && selectedPinv.extraction ? (
+                      <ExtractionInspector
+                        pinv={selectedPinv}
+                        onEditField={onEditField}
+                        onReextract={onReextract}
+                        onAccept={onAcceptExtract}
+                      />
+                    ) : (
+                      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        {selectedPinv.routed ? (
+                          <DetailPanel result={selectedPinv.routed} />
+                        ) : (
+                          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13, padding: 24, textAlign: 'center' }}>
+                            Synthetic batch invoice — full extraction &amp; validation detail is available for the 12 real invoices (samples + /input). Click the Extract node for invoices that have a source document.
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 14 }}>

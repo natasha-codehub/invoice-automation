@@ -11,9 +11,9 @@
 
 | | |
 |---|---|
-| **Current phase** | Phase A ✓ complete (browser-verified) → next is **Phase B** |
-| **Last worked** | 2026-06-17 (Phase A built: pipeline spine + 3 zoom levels) |
-| **Next action** | Phase B · Step B1 — side-by-side PDF + extracted fields |
+| **Current phase** | Phase B ✓ complete (browser-verified) → next is **Phase C** |
+| **Last worked** | 2026-06-17 (Phase B built: extraction inspector + consistency gate) |
+| **Next action** | Phase C · Step C1 — `src/data/erpCatalog.js` (see §4) |
 | **Dev server** | `npm run dev` → http://localhost:5173 |
 | **Verify a change** | run app in browser (system Chrome via playwright-core), screenshot the surface — never "tests pass" |
 
@@ -186,13 +186,22 @@ full inspector below. Virtualization holds at 1,000 rows.
 
 ### Phase B — Stage ② deep: extraction inspector
 **Goal:** the trust surface for extraction.
-- [ ] B1. **Side-by-side**: render the source PDF (`pdf.js` or `<embed>` of the bundled URL) next to extracted fields.
-- [ ] B2. **Field-level confidence** on each field (extend `ExtractionResult` to carry per-field conf; mock for demo engine, real for native).
-- [ ] B3. **Arithmetic/consistency gate** (Stage 2.5): Σ line totals = subtotal; subtotal+tax = total; qty×unit = line total → emit issues; this gate, not raw confidence, decides extract-stage STP.
-- [ ] B4. **Actions:** Accept · Edit field (writes a `human:` TraceEntry) · **Re-run extraction on this invoice** (scoped `running` transition, versioned — never clobber a human edit) · Switch engine & re-run.
-- [ ] B5. Failure/empty states per engine; native-no-key already handled.
+- [x] B1. **Side-by-side**: source PDF (`<iframe>` of the bundled URL) next to extracted fields. `src/components/ExtractionInspector.jsx`.
+- [x] B2. **Field-level confidence** per field (`fieldConfidence` on the 4 baked extractions; low fields flagged red). Human edits set that field's confidence to 100%.
+- [x] B3. **Arithmetic/consistency gate** (`src/pipeline/consistency.js`): Σ line totals = subtotal; subtotal+tax = total; qty×unit = line total. A hard mismatch routes Extract → needs_review regardless of model confidence.
+- [x] B4. **Actions:** Edit field (controlled draft, commits on blur, re-pipes + `human:` trace) · Accept (forces extract auto_resolved + trace) · Re-extract (re-runs the engine, `engine:` trace). All via a `patched` override map in App that re-runs `runPipeline`; the funnel updates live.
+- [x] B5. Empty/failure states: no-source placeholder for sample/synthetic; native-no-key surfaces the error banner.
 
-**Done when:** open an invoice → PDF and fields side by side; a deliberately-broken total trips the arithmetic gate → `needs_review` with the exact mismatch; editing the field clears it and logs a trace; re-run produces a v2 without losing the edit.
+**Done when:** ✓ VERIFIED 2026-06-17 — selecting bundled INV-XPEDITED opens the
+inspector defaulted to Extract: PDF iframe (left) + editable fields with confidence
+% (right) + consistency gate "all checks pass". Editing subtotal → 999 trips the
+gate ("Σ 468.80 ≠ subtotal 999.00"), flips Extract → needs_review, and surfaces an
+Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.**
+
+> **Known shallow edges (revisit later):** re-extract on the Demo engine returns
+> the same baked data (deterministic) — version *history* is trace-only, no diff UI
+> (defer to Phase E). Native re-extract needs a key. PDF rendered via `<iframe>`
+> (browser viewer), not `pdf.js` — fine for demo, no bounding-box highlights yet.
 
 ### Phase C — Stage ③ deep: ERP mapping & validation
 **Goal:** the differentiator — line items mapped to ERP, three-way match, confidence routing.

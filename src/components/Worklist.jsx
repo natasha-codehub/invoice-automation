@@ -74,7 +74,7 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
       </div>
 
       {/* Virtualized rows */}
-      <div ref={viewRef} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
+      <div ref={viewRef} data-wl-scroller onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
         <div style={{ height: sorted.length * ROW_H, position: 'relative' }}>
           {visible.map((inv, i) => {
             const idx = start + i;

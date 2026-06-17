@@ -8,7 +8,7 @@
  */
 
 import { sampleInvoices } from '../data/invoices.js';
-import { BUNDLED } from '../data/inputInvoices.js';
+import { BUNDLED, inputFiles } from '../data/inputInvoices.js';
 import { runPipeline } from './runPipeline.js';
 import { aggregateBatch } from './aggregateBatch.js';
 import { STATUS, STAGES, mkStage, deriveOverall, TOUCHLESS } from './model.js';
@@ -24,15 +24,20 @@ const SYNTH_VENDORS = [
 
 // The 4 bundled ESPRIGAS invoices as engine-ready invoice objects.
 function bundledInvoices() {
-  return BUNDLED.map((b) => ({
-    ...b.extraction,
-    id: `INV-${b.match.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)}`,
-    invoiceNumber: b.extraction.invoiceNumber,
-    vendorName: b.extraction.vendorRaw,
-    scenario: b.scenario,
-    extractionEngine: 'Demo',
-    extractionEngineId: 'demo',
-  }));
+  return BUNDLED.map((b) => {
+    const file = inputFiles.find((f) => f.name.toLowerCase().includes(b.match));
+    return {
+      ...b.extraction,
+      id: `INV-${b.match.toUpperCase().replace(/[^A-Z0-9]/g, '')}`,
+      invoiceNumber: b.extraction.invoiceNumber,
+      vendorName: b.extraction.vendorRaw,
+      scenario: b.scenario,
+      extractionEngine: 'Demo',
+      extractionEngineId: 'demo',
+      sourceUrl: file?.url || null,
+      sourceFile: file?.name || null,
+    };
+  });
 }
 
 // One lightweight synthetic invoice with a realistic stop-point distribution.

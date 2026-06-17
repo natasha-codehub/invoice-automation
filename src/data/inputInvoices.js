@@ -41,6 +41,7 @@ const VERN_LEWIS = {
   goodsReceipt: true,
   duplicate: false,
   confidence: 0.71,
+  fieldConfidence: { vendor: 0.62, invoiceNumber: 0.74, poNumber: 0.58, date: 0.69, subtotal: 0.82, total: 0.82 },
   warnings: [
     'Quantity column ambiguous — cylinder size ("16cf"/"47cf") overlaps the qty field; quantities inferred from amount ÷ unit price',
     'No tax line on document — tax check skipped',
@@ -86,6 +87,7 @@ const XPEDITED = {
   goodsReceipt: true,
   duplicate: false,
   confidence: 0.64,
+  fieldConfidence: { vendor: 0.70, invoiceNumber: 0.72, poNumber: 0.55, date: 0.60, subtotal: 0.83, total: 0.83 },
   warnings: [
     'Two PO numbers present (40392712 and 40392715) — reconciled against 40392712; second PO not allocated',
     '10 of 17 line rows are price-list entries with zero quantity — excluded',
@@ -123,6 +125,7 @@ const HAUN_SCRANTON = {
   goodsReceipt: false,
   duplicate: false,
   confidence: 0.82,
+  fieldConfidence: { vendor: 0.88, invoiceNumber: 0.90, poNumber: 0.80, date: 0.78, subtotal: 0.90, total: 0.90 },
   warnings: [
     'Partial shipment — 143 CYL shipped of 200 ordered; goods receipt not fully confirmed',
     'Hazardous material handling line is $0.00 — verify it is intentionally waived',
@@ -159,6 +162,7 @@ const HAUN_ALBANY = {
   goodsReceipt: true,
   duplicate: false,
   confidence: 0.79,
+  fieldConfidence: { vendor: 0.86, invoiceNumber: 0.88, poNumber: 0.60, date: 0.78, subtotal: 0.88, total: 0.88 },
   warnings: [
     'PO number ambiguous on document ("P002050543" with leading space — P002 vs PO02) — normalised to canonical form',
     'Per-line customer part numbers present (T060, Y040, O033) — captured in descriptions',
