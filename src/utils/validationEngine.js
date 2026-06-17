@@ -21,6 +21,13 @@ const VENDOR_ALIASES = {
   "Sharp Gas":               "Sharpgas Inc",
   "Acme Supplies":           "Acme Supplies Ltd",
   "Acme":                    "Acme Supplies Ltd",
+  // Real /input batch — supplier name variants seen on the documents
+  "VERN LEWIS WELDING SUPPLY": "Vern Lewis Welding Supply",
+  "Vern Lewis":                "Vern Lewis Welding Supply",
+  "Vern Lewis Welding":        "Vern Lewis Welding Supply",
+  "Xpedited":                  "Xpedited Gas",
+  "Haun Welding":              "Haun Welding Supply Inc",
+  "Haun Welding Supply":       "Haun Welding Supply Inc",
 };
 
 // ─── Normalisation ───────────────────────────────────────────────────────────

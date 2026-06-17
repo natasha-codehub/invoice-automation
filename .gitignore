@@ -26,3 +26,8 @@ dist-ssr
 # Environment
 .env
 .env.local
+
+.vercel
+
+# Office temp/lock files (e.g. ~$document.docx)
+~$*

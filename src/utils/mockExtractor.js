@@ -1,7 +1,7 @@
 /**
  * mockExtractor.js
  *
- * In production this calls the Anthropic API at /v1/messages with claude-opus-4-5
+ * In production this calls the Anthropic API at /v1/messages with claude-opus-4-8
  * using a base64 image content block. See extractInvoice.js for the real
  * implementation skeleton.
  *
