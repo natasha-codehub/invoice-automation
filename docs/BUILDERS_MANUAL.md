@@ -11,9 +11,9 @@
 
 | | |
 |---|---|
-| **Current phase** | Phase A — Pipeline skeleton (not started) |
-| **Last worked** | 2026-06-17 (manual written) |
-| **Next action** | Phase A · Step A1 — define the pipeline state model |
+| **Current phase** | Phase A ✓ complete (browser-verified) → next is **Phase B** |
+| **Last worked** | 2026-06-17 (Phase A built: pipeline spine + 3 zoom levels) |
+| **Next action** | Phase B · Step B1 — side-by-side PDF + extracted fields |
 | **Dev server** | `npm run dev` → http://localhost:5173 |
 | **Verify a change** | run app in browser (system Chrome via playwright-core), screenshot the surface — never "tests pass" |
 
@@ -164,15 +164,25 @@ UoM mismatch (CYL vs EA) is a soft issue. Unmatched material or GL = needs_revie
 **Why first:** locks the data model (§3) and the IA before any stage gets expensive.
 
 Build steps:
-- [ ] A1. `src/pipeline/model.js` — `PipelineInvoice`, `StageResult`, status grammar, `deriveOverall()`.
-- [ ] A2. `src/pipeline/runPipeline.js` — run one invoice through 4 stages. Wrap **existing** code: Stage② = `runExtraction` (done); Stage③ = `routeInvoice` (existing 7 checks) as a *placeholder* validate; Stage①/④ = trivial pass for now.
-- [ ] A3. `src/pipeline/aggregateBatch.js` — fold N PipelineInvoices into a `Batch` funnel (counts + `% HITL@stage` + STP).
-- [ ] A4. **BatchFunnel** component (Zoom 1) — 4 segmented bars, drop-off connectors, click → set worklist filter.
-- [ ] A5. **Worklist** component (Zoom 2) — **virtualized** list, facet filter (stage × status), sort by $-at-risk.
-- [ ] A6. **InvoiceStepper** component (Zoom 3) — 4 horizontal nodes, click a node → expands the existing DetailPanel sections.
-- [ ] A7. Wire a 3-pane layout / view switch into `App.jsx`; ingest `/input` + samples as one mock batch.
+- [x] A1. `src/pipeline/model.js` — status grammar, `mkStage`, `deriveOverall()`, `STATUS_META`.
+- [x] A2. `src/pipeline/runPipeline.js` — one invoice through 4 stages, short-circuiting; wraps `routeInvoice` for validate. (`runExtraction` stays the live-ingest path; batch uses baked confidence.)
+- [x] A3. `src/pipeline/aggregateBatch.js` — funnel counts + `% HITL@stage` + STP + value-at-risk.
+- [x] A3b. `src/pipeline/generateBatch.js` — 12 real invoices (full depth) + synthetic fill to 1,000 (scale).
+- [x] A4. **BatchFunnel** (Zoom 1) — segmented bars, flow-on connectors, clickable segments.
+- [x] A5. **Worklist** (Zoom 2) — hand-rolled virtualization (ResizeObserver), facet filter, sort by $-at-risk/conf/vendor.
+- [x] A6. **InvoiceStepper** (Zoom 3) — 4 nodes + active-stage issues, reuses `DetailPanel` below.
+- [x] A7. Wired into `App.jsx` as the **Batch Pipeline** tab.
 
-**Done when (verify in browser):** ingest the batch → funnel shows 4 stages with counts and a believable `% HITL@stage`; clicking the Validate⚠ segment filters the worklist to those invoices; clicking one opens its stepper with the 4 nodes colored by status.
+**Done when (verify in browser):** ✓ VERIFIED 2026-06-17 — funnel shows 1,000 in →
+982 → 940 → 818 with HITL 0/4.3/8.4/0% per stage, 81.8% STP; clicking the
+Validate⚠ segment filters the worklist to 79; selecting INV-005 opens the stepper
+(Ingest✓ Extract✓ Validate⚠ Route·notreached) with the goods-receipt issue and the
+full inspector below. Virtualization holds at 1,000 rows.
+
+> **Known shallow edges (intentional, revisit in later phases):** batch generated
+> once at tolerance 2% (doesn't react to the dial yet); synthetic invoices have no
+> deep inspector; STP headline counts passed+auto (touchless) — split out
+> straight-through vs auto-corrected when the guardrail metrics land (Phase F).
 
 ### Phase B — Stage ② deep: extraction inspector
 **Goal:** the trust surface for extraction.

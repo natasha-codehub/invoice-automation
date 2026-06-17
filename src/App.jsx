@@ -1,13 +1,17 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { sampleInvoices } from './data/invoices.js';
 import { routeInvoice } from './utils/router.js';
 import { DEMO_MATHESON } from './utils/mockExtractor.js';
 import { runExtraction, PROVIDERS, getProvider } from './utils/extraction/providers.js';
 import { inputFiles, inputFileCount } from './data/inputInvoices.js';
+import { generateBatch } from './pipeline/generateBatch.js';
 import InvoiceList from './components/InvoiceList.jsx';
 import DetailPanel from './components/DetailPanel.jsx';
 import EvalDashboard from './components/EvalDashboard.jsx';
-const TABS = ['Invoice Processor', 'AI Eval & STP Trend'];
+import BatchFunnel from './components/BatchFunnel.jsx';
+import Worklist from './components/Worklist.jsx';
+import InvoiceStepper from './components/InvoiceStepper.jsx';
+const TABS = ['Invoice Processor', 'Batch Pipeline', 'AI Eval & STP Trend'];
 const TOLERANCES = [1, 2, 3, 5];
 
 const BUCKET_ORDER = ['STRAIGHT_THROUGH', 'AUTO_CORRECTED', 'HUMAN_REVIEW', 'AUTO_REJECTED'];
@@ -51,6 +55,22 @@ export default function App() {
 
   // Persist the chosen extraction engine (Layer-1 seam selection)
   useEffect(() => { localStorage.setItem('extractionEngine', engine); }, [engine]);
+
+  // ── Batch Pipeline (Phase A): one mock intake batch, 3 zoom levels ──
+  const pipeline = useMemo(() => generateBatch(1000, 2), []);
+  const [worklistFilter, setWorklistFilter] = useState(null);
+  const [selectedPipelineId, setSelectedPipelineId] = useState(null);
+  const [activeStage, setActiveStage] = useState(null);
+
+  const filteredBatch = useMemo(() => {
+    if (!worklistFilter) return pipeline.invoices;
+    return pipeline.invoices.filter(inv => inv.stages[worklistFilter.stage]?.status === worklistFilter.status);
+  }, [pipeline, worklistFilter]);
+
+  const selectedPinv = useMemo(
+    () => pipeline.invoices.find(inv => inv.id === selectedPipelineId) || null,
+    [pipeline, selectedPipelineId],
+  );
 
   // Re-run router whenever tolerance or live invoices change
   useEffect(() => {
@@ -465,8 +485,56 @@ export default function App() {
           </div>
         )}
 
-        {/* ── Tab 1: Eval Dashboard ── */}
+        {/* ── Tab 1: Batch Pipeline ── */}
         {activeTab === 1 && (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <BatchFunnel
+              batch={pipeline.batch}
+              activeFilter={worklistFilter}
+              onSegmentClick={(stage, status) => {
+                setWorklistFilter({ stage, status });
+                setSelectedPipelineId(null);
+              }}
+            />
+            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+              <Worklist
+                invoices={filteredBatch}
+                totalCount={pipeline.invoices.length}
+                selectedId={selectedPipelineId}
+                onSelect={(id) => {
+                  setSelectedPipelineId(id);
+                  const pinv = pipeline.invoices.find(i => i.id === id);
+                  setActiveStage(pinv?.stoppedAt || null);
+                }}
+                filter={worklistFilter}
+                onClearFilter={() => setWorklistFilter(null)}
+              />
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#fff' }}>
+                {selectedPinv ? (
+                  <>
+                    <InvoiceStepper pinv={selectedPinv} activeStage={activeStage} onStageClick={setActiveStage} />
+                    <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                      {selectedPinv.routed ? (
+                        <DetailPanel result={selectedPinv.routed} />
+                      ) : (
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13, padding: 24, textAlign: 'center' }}>
+                          Synthetic batch invoice — full extraction &amp; validation detail is available for the 12 real invoices (samples + /input). Phase B/C add the deep inspector.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 14 }}>
+                    Select an invoice from the worklist
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Tab 2: Eval Dashboard ── */}
+        {activeTab === 2 && (
           <div style={{ flex: 1, overflowY: 'auto' }}>
             <EvalDashboard results={results} />
           </div>

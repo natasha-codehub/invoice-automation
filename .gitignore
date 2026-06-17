@@ -29,5 +29,6 @@ dist-ssr
 
 .vercel
 
-# Office temp/lock files (e.g. ~$document.docx)
+# Office docs + temp/lock files (e.g. ~$document.docx)
+*.docx
 ~$*
