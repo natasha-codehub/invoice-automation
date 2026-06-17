@@ -1,8 +1,13 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { STATUS_META, STAGE_LABELS } from '../pipeline/model.js';
 
-const ROW_H = 58;
+const ROW_H = 64;
 const OVERSCAN = 6;
+
+function confColor(c) {
+  if (c == null) return '#94a3b8';
+  return c >= 0.8 ? '#059669' : c >= 0.6 ? '#d97706' : '#dc2626';
+}
 
 const SORTS = {
   risk:   { label: '$ at risk', fn: (a, b) => b.valueAtRisk - a.valueAtRisk },
@@ -79,32 +84,48 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
           {visible.map((inv, i) => {
             const idx = start + i;
             const isSel = inv.id === selectedId;
+            const isLive = String(inv.id).startsWith('INV-LIVE-');
+            const subline = inv.sourceFile || inv.scenario || `stopped at ${STAGE_LABELS[inv.stoppedAt]}`;
             return (
               <button
                 key={inv.id}
                 onClick={() => onSelect(inv.id)}
                 style={{
                   position: 'absolute', top: idx * ROW_H, left: 0, right: 0, height: ROW_H,
-                  display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3,
+                  display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4,
                   padding: '0 14px', textAlign: 'left',
-                  background: isSel ? '#ede9fe' : 'transparent',
+                  background: isSel ? '#ede9fe' : (isLive ? '#faf8ff' : 'transparent'),
                   borderLeft: `3px solid ${isSel ? '#7c3aed' : 'transparent'}`,
                   borderBottom: '1px solid #eef2f7', borderTop: 'none', borderRight: 'none',
                   cursor: 'pointer',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {inv.vendorName}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                    {isLive && (
+                      <span title="Just ingested" style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, letterSpacing: '0.04em', color: '#7c3aed', background: '#ede9fe', borderRadius: 4, padding: '1px 5px' }}>
+                        NEW
+                      </span>
+                    )}
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {inv.vendorName}
+                    </span>
                   </span>
                   <StatusChip status={inv.overallStatus} />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, color: '#94a3b8' }}>
-                    {inv.id} · stopped at {STAGE_LABELS[inv.stoppedAt]}
+                  <span style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                    {subline}
                   </span>
-                  <span style={{ fontSize: 12, color: inv.valueAtRisk > 0 ? '#dc2626' : '#64748b', fontWeight: 600 }}>
-                    {inv.total != null ? `₹${inv.total.toLocaleString()}` : '—'}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                    {inv.confidence != null && (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: confColor(inv.confidence) }}>
+                        {Math.round(inv.confidence * 100)}%
+                      </span>
+                    )}
+                    <span style={{ fontSize: 12, color: inv.valueAtRisk > 0 ? '#dc2626' : '#64748b', fontWeight: 600 }}>
+                      {inv.total != null ? `₹${inv.total.toLocaleString()}` : '—'}
+                    </span>
                   </span>
                 </div>
               </button>

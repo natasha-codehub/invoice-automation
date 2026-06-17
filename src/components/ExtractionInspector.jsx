@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 
 const FIELDS = [
-  { key: 'vendorRaw',     label: 'Vendor',     conf: 'vendor',        type: 'text' },
-  { key: 'invoiceNumber', label: 'Invoice #',  conf: 'invoiceNumber', type: 'text' },
-  { key: 'poNumber',      label: 'PO Number',  conf: 'poNumber',      type: 'text' },
-  { key: 'date',          label: 'Date',       conf: 'date',          type: 'text' },
-  { key: 'subtotal',      label: 'Subtotal',   conf: 'subtotal',      type: 'number' },
-  { key: 'tax',           label: 'Tax',        conf: null,            type: 'number' },
-  { key: 'total',         label: 'Total',      conf: 'total',         type: 'number' },
+  { key: 'vendorRaw',     label: 'Vendor',     conf: 'vendor',        type: 'text',   section: 'Header' },
+  { key: 'invoiceNumber', label: 'Invoice #',  conf: 'invoiceNumber', type: 'text',   section: 'Header' },
+  { key: 'poNumber',      label: 'PO Number',  conf: 'poNumber',      type: 'text',   section: 'Header' },
+  { key: 'date',          label: 'Date',       conf: 'date',          type: 'text',   section: 'Header' },
+  { key: 'subtotal',      label: 'Subtotal',   conf: 'subtotal',      type: 'number', section: 'Totals' },
+  { key: 'tax',           label: 'Tax',        conf: null,            type: 'number', section: 'Totals' },
+  { key: 'total',         label: 'Total',      conf: 'total',         type: 'number', section: 'Totals' },
 ];
 
 function confColor(c) {
@@ -21,6 +21,62 @@ function ConfChip({ c }) {
     <span style={{ fontSize: 11, fontWeight: 700, color: confColor(c), minWidth: 34, textAlign: 'right' }}>
       {Math.round(c * 100)}%
     </span>
+  );
+}
+
+const money = (n) => (n == null ? '—' : `₹${Number(n).toLocaleString()}`);
+
+// Styled mock invoice page built from the extraction — shown when there's no
+// real source PDF (synthetic / sample invoices), mirroring a rendered document.
+function MockInvoicePage({ ext }) {
+  const lines = ext.lineItems || [];
+  return (
+    <div style={{
+      background: '#fff', width: '100%', maxWidth: 420, borderRadius: 3,
+      padding: '26px 30px', boxShadow: '0 1px 6px rgba(0,0,0,0.25)', color: '#1a1a2e',
+      fontFamily: 'IBM Plex Mono, monospace',
+    }}>
+      <div style={{ fontSize: 15, fontWeight: 700 }}>{ext.vendorRaw || 'Unknown Vendor'}</div>
+      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>Reconstructed from extraction · no source file</div>
+      <div style={{ borderTop: '2px solid #4f46e5', margin: '10px 0 12px' }} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', fontSize: 10, marginBottom: 14 }}>
+        <span style={{ color: '#94a3b8' }}>Invoice No.</span><span style={{ fontWeight: 600, textAlign: 'right' }}>{ext.invoiceNumber || '—'}</span>
+        <span style={{ color: '#94a3b8' }}>Invoice Date</span><span style={{ fontWeight: 600, textAlign: 'right' }}>{ext.date || '—'}</span>
+        <span style={{ color: '#94a3b8' }}>PO Ref.</span><span style={{ fontWeight: 600, textAlign: 'right' }}>{ext.poNumber || '—'}</span>
+      </div>
+      {lines.length > 0 && (
+        <>
+          <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94a3b8', borderBottom: '0.5px solid #e2e8f0', paddingBottom: 3, marginBottom: 6 }}>
+            Line items
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 9 }}>
+            <thead>
+              <tr style={{ color: '#94a3b8' }}>
+                <th style={{ textAlign: 'left', fontWeight: 500, padding: '3px 0' }}>Description</th>
+                <th style={{ textAlign: 'right', fontWeight: 500, padding: '3px 0' }}>Qty</th>
+                <th style={{ textAlign: 'right', fontWeight: 500, padding: '3px 0' }}>Unit</th>
+                <th style={{ textAlign: 'right', fontWeight: 500, padding: '3px 0' }}>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l, i) => (
+                <tr key={i} style={{ borderTop: '0.5px solid #f1f5f9' }}>
+                  <td style={{ padding: '4px 0', color: '#334155' }}>{l.desc}</td>
+                  <td style={{ padding: '4px 0', textAlign: 'right', color: '#334155' }}>{l.qty}</td>
+                  <td style={{ padding: '4px 0', textAlign: 'right', color: '#334155' }}>{money(l.unit)}</td>
+                  <td style={{ padding: '4px 0', textAlign: 'right', color: '#334155' }}>{money(l.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, marginTop: 12, fontSize: 10 }}>
+        <div style={{ display: 'flex', gap: 14 }}><span style={{ color: '#94a3b8', minWidth: 70, textAlign: 'right' }}>Subtotal</span><span style={{ fontWeight: 600, minWidth: 64, textAlign: 'right' }}>{money(ext.subtotal)}</span></div>
+        {ext.tax != null && <div style={{ display: 'flex', gap: 14 }}><span style={{ color: '#94a3b8', minWidth: 70, textAlign: 'right' }}>Tax</span><span style={{ fontWeight: 600, minWidth: 64, textAlign: 'right' }}>{money(ext.tax)}</span></div>}
+        <div style={{ display: 'flex', gap: 14, borderTop: '1px solid #334155', paddingTop: 3, marginTop: 2 }}><span style={{ fontWeight: 700, minWidth: 70, textAlign: 'right' }}>Amount Due</span><span style={{ fontWeight: 700, minWidth: 64, textAlign: 'right' }}>{money(ext.total)}</span></div>
+      </div>
+    </div>
   );
 }
 
@@ -49,22 +105,26 @@ export default function ExtractionInspector({ pinv, busy, onEditField, onReextra
 
   return (
     <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-      {/* Left — source document */}
-      <div style={{ width: '46%', minWidth: 340, borderRight: '1px solid var(--border)', background: '#f1f5f9', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>
-          SOURCE DOCUMENT {pinv.sourceFile ? `· ${pinv.sourceFile}` : ''}
+      {/* Left — source document, in a PDF-viewer chrome */}
+      <div style={{ width: '46%', minWidth: 340, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#475569' }}>
+        {/* Dark viewer toolbar */}
+        <div style={{ background: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', flexShrink: 0 }}>
+          <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            📄 {pinv.sourceFile || 'reconstructed-from-extraction'}
+          </span>
+          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, flexShrink: 0, marginLeft: 8 }}>Page 1 of 1</span>
         </div>
         {pinv.sourceUrl ? (
           <iframe title="source invoice" src={pinv.sourceUrl} style={{ flex: 1, border: 'none', background: '#fff' }} />
         ) : (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13, padding: 20, textAlign: 'center' }}>
-            No source document for this invoice (synthetic / sample). Side-by-side PDF is available for the bundled /input invoices.
+          <div style={{ flex: 1, overflowY: 'auto', padding: 18, display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+            <MockInvoicePage ext={ext} />
           </div>
         )}
       </div>
 
       {/* Right — extracted fields + confidence + consistency */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', background: '#fff' }}>
         {/* Header / actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
           <span style={{ fontSize: 13, fontWeight: 800, color: '#3730a3', letterSpacing: '0.04em' }}>EXTRACTED FIELDS</span>
@@ -85,31 +145,41 @@ export default function ExtractionInspector({ pinv, busy, onEditField, onReextra
           <button onClick={onReextract} disabled={busy} className="ins-btn">↻ Re-extract</button>
         </div>
 
-        {/* Field rows (editable) */}
+        {/* Field rows (editable), grouped Header / Totals */}
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 18 }}>
           <tbody>
-            {FIELDS.map((f) => {
+            {FIELDS.map((f, i) => {
               const c = f.conf ? fc[f.conf] : null;
               const low = c != null && c < 0.6;
+              const newSection = i === 0 || FIELDS[i - 1].section !== f.section;
               return (
-                <tr key={f.key}>
-                  <td style={{ fontSize: 13, color: '#64748b', fontWeight: 600, padding: '5px 12px 5px 0', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{f.label}</td>
-                  <td style={{ padding: '5px 0', width: '100%' }}>
-                    <input
-                      value={draft[f.key] ?? ''}
-                      onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
-                      onBlur={(e) => commit(f.key, e.target.value, f.type)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                      style={{
-                        width: '100%', fontSize: 13, padding: '5px 8px', borderRadius: 5,
-                        border: `1px solid ${low ? '#fca5a5' : '#e2e8f0'}`,
-                        background: low ? '#fff5f5' : '#fff', color: '#1e293b',
-                        fontFamily: 'IBM Plex Mono, monospace',
-                      }}
-                    />
-                  </td>
-                  <td style={{ padding: '5px 0 5px 10px', verticalAlign: 'middle' }}><ConfChip c={c} /></td>
-                </tr>
+                <Fragment key={f.key}>
+                  {newSection && (
+                    <tr>
+                      <td colSpan={3} style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#94a3b8', textTransform: 'uppercase', padding: i === 0 ? '0 0 6px' : '12px 0 6px' }}>
+                        {f.section}
+                      </td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td style={{ fontSize: 13, color: '#64748b', fontWeight: 600, padding: '5px 12px 5px 0', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{f.label}</td>
+                    <td style={{ padding: '5px 0', width: '100%' }}>
+                      <input
+                        value={draft[f.key] ?? ''}
+                        onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                        onBlur={(e) => commit(f.key, e.target.value, f.type)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                        style={{
+                          width: '100%', fontSize: 13, padding: '5px 8px', borderRadius: 5,
+                          border: `1px solid ${low ? '#fca5a5' : '#e2e8f0'}`,
+                          background: low ? '#fff5f5' : '#fff', color: '#1e293b',
+                          fontFamily: 'IBM Plex Mono, monospace',
+                        }}
+                      />
+                    </td>
+                    <td style={{ padding: '5px 0 5px 10px', verticalAlign: 'middle' }}><ConfChip c={c} /></td>
+                  </tr>
+                </Fragment>
               );
             })}
           </tbody>

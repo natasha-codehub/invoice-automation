@@ -23,7 +23,7 @@ const SYNTH_VENDORS = [
 ];
 
 // The 4 bundled ESPRIGAS invoices as engine-ready invoice objects.
-function bundledInvoices() {
+export function bundledInvoices() {
   return BUNDLED.map((b) => {
     const file = inputFiles.find((f) => f.name.toLowerCase().includes(b.match));
     return {
@@ -85,6 +85,15 @@ function synth(i, batchId) {
 }
 
 /**
+ * generateSynthetic(count, batchId) → synthetic[] (already in StageResult form).
+ * Built once and kept stable across tolerance changes, so the funnel only moves
+ * for the real + ingested invoices the tolerance dial actually re-pipes.
+ */
+export function generateSynthetic(count = 988, batchId = 'B-2026-0617') {
+  return Array.from({ length: Math.max(0, count) }, (_, i) => synth(i + 1, batchId));
+}
+
+/**
  * generateBatch(size, tolerance) → { invoices, batch }
  * Real invoices come first (pinned, fully inspectable), then synthetic fill.
  */
@@ -93,8 +102,7 @@ export function generateBatch(size = 1000, tolerance = 2) {
   const real = [...bundledInvoices(), ...sampleInvoices].map((inv) =>
     runPipeline(inv, tolerance, batchId),
   );
-  const synthCount = Math.max(0, size - real.length);
-  const synthetic = Array.from({ length: synthCount }, (_, i) => synth(i + 1, batchId));
+  const synthetic = generateSynthetic(size - real.length, batchId);
   const invoices = [...real, ...synthetic];
   return { invoices, batch: aggregateBatch(invoices, batchId) };
 }

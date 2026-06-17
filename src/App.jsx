@@ -1,53 +1,26 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { sampleInvoices } from './data/invoices.js';
-import { routeInvoice } from './utils/router.js';
 import { DEMO_MATHESON } from './utils/mockExtractor.js';
 import { runExtraction, PROVIDERS, getProvider } from './utils/extraction/providers.js';
 import { inputFiles, inputFileCount } from './data/inputInvoices.js';
-import { generateBatch } from './pipeline/generateBatch.js';
+import { bundledInvoices, generateSynthetic } from './pipeline/generateBatch.js';
 import { runPipeline } from './pipeline/runPipeline.js';
 import { aggregateBatch } from './pipeline/aggregateBatch.js';
-import InvoiceList from './components/InvoiceList.jsx';
 import DetailPanel from './components/DetailPanel.jsx';
 import EvalDashboard from './components/EvalDashboard.jsx';
 import BatchFunnel from './components/BatchFunnel.jsx';
 import Worklist from './components/Worklist.jsx';
 import InvoiceStepper from './components/InvoiceStepper.jsx';
 import ExtractionInspector from './components/ExtractionInspector.jsx';
-const TABS = ['Batch Pipeline', 'Invoice Processor', 'AI Eval & STP Trend'];
+
+const TABS = ['Batch Pipeline', 'AI Eval & STP Trend'];
 const TOLERANCES = [1, 2, 3, 5];
-
-const BUCKET_ORDER = ['STRAIGHT_THROUGH', 'AUTO_CORRECTED', 'HUMAN_REVIEW', 'AUTO_REJECTED'];
-const BUCKET_COLORS = {
-  STRAIGHT_THROUGH: 'var(--green)',
-  AUTO_CORRECTED: '#06b6d4',
-  HUMAN_REVIEW: 'var(--amber)',
-  AUTO_REJECTED: 'var(--red)',
-};
-const BUCKET_LABELS = {
-  STRAIGHT_THROUGH: 'Straight Through',
-  AUTO_CORRECTED: 'Auto-Corrected',
-  HUMAN_REVIEW: 'Human Review',
-  AUTO_REJECTED: 'Auto-Rejected',
-};
-
-const PASTEL_BG = {
-  STRAIGHT_THROUGH: '#dcfce7',
-  AUTO_CORRECTED:   '#cffafe',
-  HUMAN_REVIEW:     '#fef9c3',
-  AUTO_REJECTED:    '#fee2e2',
-};
-
-function buildResults(invoiceList, tolerance) {
-  return invoiceList.map(inv => routeInvoice(inv, tolerance));
-}
+const BATCH_ID = 'B-2026-0617';
+const SYNTH_COUNT = 988; // + 12 real invoices ≈ a 1,000-doc intake batch
 
 export default function App() {
   const [activeTab, setActiveTab] = useState(0);
   const [tolerance, setTolerance] = useState(2);
-  const [liveInvoices, setLiveInvoices] = useState([]);
-  const [results, setResults] = useState(() => buildResults(sampleInvoices, 2));
-  const [selectedIdx, setSelectedIdx] = useState(0);
   const [isExtracting, setIsExtracting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -56,22 +29,35 @@ export default function App() {
   const progressTimerRef = useRef(null);
   const liveSeq = useRef(0);
 
-  // Persist the chosen extraction engine (Layer-1 seam selection)
-  useEffect(() => { localStorage.setItem('extractionEngine', engine); }, [engine]);
-
-  // ── Batch Pipeline (Phase A/B): one mock intake batch, 3 zoom levels ──
-  const pipeline = useMemo(() => generateBatch(1000, 2), []);
+  // ── Batch Pipeline: one intake batch, 3 zoom levels, now the only processing tab ──
+  const [liveRaw, setLiveRaw] = useState([]);        // demo / drop / /input ingests (raw extractions)
+  const [patched, setPatched] = useState({});        // id → re-piped PipelineInvoice (edits/re-runs)
   const [worklistFilter, setWorklistFilter] = useState(null);
   const [selectedPipelineId, setSelectedPipelineId] = useState(null);
   const [activeStage, setActiveStage] = useState(null);
-  const [patched, setPatched] = useState({}); // id → re-piped PipelineInvoice (edits/re-runs)
 
-  // Apply edits/re-runs on top of the generated batch; funnel reflects them live.
-  const displayInvoices = useMemo(
-    () => pipeline.invoices.map(inv => patched[inv.id] || inv),
-    [pipeline, patched],
+  // Persist the chosen extraction engine (Layer-1 seam selection)
+  useEffect(() => { localStorage.setItem('extractionEngine', engine); }, [engine]);
+
+  // Tolerance is a global re-run: drop per-invoice edits so they don't apply
+  // against a stale pipe (they're cheap to redo).
+  useEffect(() => { setPatched({}); }, [tolerance]);
+
+  // Real invoices (4 bundled ESPRIGAS + 8 samples) and the synthetic fill are
+  // each built once; only the real + ingested set is re-piped on tolerance change,
+  // so the funnel moves for reasons tolerance actually controls.
+  const realRaw = useMemo(() => [...bundledInvoices(), ...sampleInvoices], []);
+  const synthetic = useMemo(() => generateSynthetic(SYNTH_COUNT, BATCH_ID), []);
+  const piped = useMemo(
+    () => [...liveRaw, ...realRaw].map(inv => runPipeline(inv, tolerance, BATCH_ID)),
+    [liveRaw, realRaw, tolerance],
   );
-  const batch = useMemo(() => aggregateBatch(displayInvoices, pipeline.batch.id), [displayInvoices, pipeline]);
+
+  const displayInvoices = useMemo(
+    () => [...piped, ...synthetic].map(inv => patched[inv.id] || inv),
+    [piped, synthetic, patched],
+  );
+  const batch = useMemo(() => aggregateBatch(displayInvoices, BATCH_ID), [displayInvoices]);
 
   const filteredBatch = useMemo(() => {
     if (!worklistFilter) return displayInvoices;
@@ -83,15 +69,22 @@ export default function App() {
     [displayInvoices, selectedPipelineId],
   );
 
+  // Eval tab consumes the routed results (routeInvoice output) of the real +
+  // ingested invoices — derived from the same unified model, no parallel flow.
+  const results = useMemo(
+    () => displayInvoices.filter(inv => inv.routed).map(inv => inv.routed),
+    [displayInvoices],
+  );
+
   // Re-pipe an invoice after a human edit / accept / re-extract, keeping human + engine traces.
   const repipeWith = useCallback((cur, ext, trace, accept = false) => {
     const carried = (cur.traces || []).filter(t => {
       const a = String(t.actor || '');
       return a.startsWith('human') || a.startsWith('engine');
     });
-    const repiped = runPipeline(ext, 2, cur.batchId, { acceptExtract: accept, extraTraces: [...carried, trace] });
+    const repiped = runPipeline(ext, tolerance, cur.batchId, { acceptExtract: accept, extraTraces: [...carried, trace] });
     setPatched(p => ({ ...p, [cur.id]: repiped }));
-  }, []);
+  }, [tolerance]);
 
   const onEditField = useCallback((field, value) => {
     const cur = selectedPinv;
@@ -126,12 +119,6 @@ export default function App() {
     }
   }, [selectedPinv, engine, repipeWith]);
 
-  // Re-run router whenever tolerance or live invoices change
-  useEffect(() => {
-    const all = [...liveInvoices, ...sampleInvoices];
-    setResults(buildResults(all, tolerance));
-  }, [tolerance, liveInvoices]);
-
   // Keyboard shortcut: D → demo mode
   useEffect(() => {
     const handler = (e) => {
@@ -158,18 +145,25 @@ export default function App() {
     setTimeout(() => setProgress(0), 600);
   }, []);
 
-  const injectLiveInvoice = useCallback((extracted, idSuffix, scenario) => {
+  // Inject a freshly extracted invoice into the batch worklist: pin it to the
+  // top, auto-select it, and open it at the Extract stage.
+  const injectLiveInvoice = useCallback((extracted, idSuffix, scenario, source) => {
     const seq = ++liveSeq.current;
+    const id = `INV-LIVE-${seq}-${idSuffix}`;
     const liveInv = {
       ...extracted,
-      id: `INV-LIVE-${seq}-${idSuffix}`,
+      id,
       invoiceNumber: extracted.invoiceNumber || `INV-LIVE-${seq}`,
       vendorName: extracted.vendorRaw || 'Unknown Vendor',
-      scenario: scenario || extracted.scenario || 'Live Upload',
+      scenario: scenario || extracted.scenario || 'Live ingest',
+      sourceUrl: source?.url || extracted.sourceUrl || null,
+      sourceFile: source?.name || extracted.sourceFile || null,
     };
-    setLiveInvoices(prev => [liveInv, ...prev]);
-    setSelectedIdx(0);
-    setActiveTab(1);
+    setLiveRaw(prev => [liveInv, ...prev]);
+    setActiveTab(0);
+    setWorklistFilter(null);
+    setSelectedPipelineId(id);
+    setActiveStage('extract');
   }, []);
 
   // Run a bundled /input file through the selected engine and inject the result.
@@ -182,14 +176,14 @@ export default function App() {
       file = new File([blob], f.name, { type: blob.type });
     }
     const extracted = await runExtraction(engine, file, { sourceName: f.name, url: f.url });
-    injectLiveInvoice(extracted, f.name.replace(/[^a-z0-9]/gi, '').slice(0, 14), f.scenario);
+    injectLiveInvoice(extracted, f.name.replace(/[^a-z0-9]/gi, '').slice(0, 14), f.scenario, { url: f.url, name: f.name });
   }, [engine, injectLiveInvoice]);
 
   // Demo mode: inject pre-baked Matheson result (always the Demo engine)
   const runDemo = useCallback(async () => {
     if (isExtracting) return;
     setIsExtracting(true);
-    setActiveTab(1);
+    setActiveTab(0);
     setExtractError('');
     startProgressAnimation();
     await new Promise(r => setTimeout(r, 500));
@@ -202,7 +196,8 @@ export default function App() {
     );
   }, [isExtracting, startProgressAnimation, finishProgress, injectLiveInvoice]);
 
-  // Handle actual file drop → selected engine
+  // Handle actual file drop → selected engine. An object URL lets the dropped
+  // PDF render in the inspector's source pane.
   const handleDrop = useCallback(async (e) => {
     e.preventDefault();
     setDragOver(false);
@@ -215,7 +210,8 @@ export default function App() {
     try {
       const extracted = await runExtraction(engine, file);
       finishProgress();
-      injectLiveInvoice(extracted, Date.now());
+      const url = file.type === 'application/pdf' ? URL.createObjectURL(file) : null;
+      injectLiveInvoice(extracted, String(Date.now()).slice(-6), null, { url, name: file.name });
     } catch (err) {
       console.error('Extraction error:', err);
       setExtractError(err.message || 'Extraction failed');
@@ -229,7 +225,7 @@ export default function App() {
   const ingestOne = useCallback(async (f) => {
     if (isExtracting) return;
     setIsExtracting(true);
-    setActiveTab(1);
+    setActiveTab(0);
     setExtractError('');
     startProgressAnimation();
     try {
@@ -248,7 +244,7 @@ export default function App() {
   const ingestInput = useCallback(async () => {
     if (isExtracting) return;
     setIsExtracting(true);
-    setActiveTab(1);
+    setActiveTab(0);
     setExtractError('');
     try {
       for (const f of [...inputFiles].reverse()) {
@@ -265,11 +261,6 @@ export default function App() {
       setIsExtracting(false);
     }
   }, [isExtracting, extractAndInject, startProgressAnimation, finishProgress]);
-
-  const counts = BUCKET_ORDER.reduce((acc, b) => {
-    acc[b] = results.filter(r => r.bucket === b).length;
-    return acc;
-  }, {});
 
   return (
     <div style={{
@@ -324,224 +315,110 @@ export default function App() {
       {/* Tab content */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
 
-        {/* ── Tab 1: Invoice Processor ── */}
-        {activeTab === 1 && (
+        {/* ── Tab 0: Batch Pipeline (now the single processing surface) ── */}
+        {activeTab === 0 && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-            {/* Toolbar */}
+            {/* Control toolbar — tolerance · engine · ingest · demo (merged from Invoice Processor) */}
             <div style={{
               borderBottom: '1px solid var(--border)',
-              padding: '12px 20px',
+              padding: '10px 20px',
               display: 'flex',
               alignItems: 'center',
-              gap: 20,
+              gap: 18,
+              flexWrap: 'wrap',
               flexShrink: 0,
-              background: '#fafbff',
+              background: '#f5f3ff',
             }}>
               {/* Tolerance dial */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ color: 'var(--text-dim)', fontSize: 13, fontWeight: 600 }}>Variance Tolerance</span>
-                <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: 'var(--text-dim)', fontSize: 12, fontWeight: 700 }}>Variance Tolerance</span>
+                <div style={{ display: 'flex', gap: 5 }}>
                   {TOLERANCES.map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setTolerance(t)}
-                      className={`tol-btn${tolerance === t ? ' tol-active' : ''}`}
-                    >
+                    <button key={t} onClick={() => setTolerance(t)} className={`tol-btn${tolerance === t ? ' tol-active' : ''}`}>
                       {t}%
                     </button>
                   ))}
                 </div>
-                <span style={{ color: 'var(--muted)', fontSize: 12, fontStyle: 'italic' }}>
-                  Negotiated with finance team · loosened as model confidence builds
-                </span>
               </div>
 
-              <div style={{ flex: 1 }} />
+              <div style={{ width: 1, height: 26, background: '#ddd6fe' }} />
 
-              {/* Demo button */}
-              <button
-                onClick={runDemo}
-                disabled={isExtracting}
-                className="demo-btn"
-                style={{ opacity: isExtracting ? 0.5 : 1, cursor: isExtracting ? 'not-allowed' : 'pointer' }}
-              >
-                ▶ Run demo
-              </button>
-            </div>
-
-            {/* Summary stat chips */}
-            <div style={{
-              padding: '12px 20px',
-              display: 'flex',
-              gap: 10,
-              flexShrink: 0,
-              borderBottom: '1px solid var(--border)',
-              background: '#f8fafc',
-            }}>
-              {BUCKET_ORDER.map(b => (
-                <div key={b} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '8px 14px',
-                  background: PASTEL_BG[b],
-                  border: `1px solid ${BUCKET_COLORS[b]}44`,
-                  borderRadius: 8,
-                }}>
-                  <span style={{ color: BUCKET_COLORS[b], fontSize: 20, fontWeight: 800, lineHeight: 1 }}>{counts[b]}</span>
-                  <span style={{ color: BUCKET_COLORS[b], fontSize: 13, fontWeight: 600 }}>{BUCKET_LABELS[b]}</span>
-                </div>
-              ))}
-              <div style={{ color: 'var(--muted)', fontSize: 13, alignSelf: 'center', marginLeft: 6 }}>
-                {results.length} invoices · tolerance {tolerance}%
-              </div>
-            </div>
-
-            {/* Split panel */}
-            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-
-              {/* Left column: drop zone + list — lavender pastel tint */}
-              <div style={{
-                width: 300,
-                minWidth: 300,
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-                background: '#f5f3ff',
-                borderRight: '2px solid #ddd6fe',
-              }}>
-
-                {/* Extraction engine selector — Layer-1 seam */}
-                <div style={{ padding: '12px 12px 4px' }}>
-                  <div style={{ color: '#5b21b6', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', marginBottom: 6 }}>
-                    EXTRACTION ENGINE
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {PROVIDERS.map(p => (
-                      <button
-                        key={p.id}
-                        onClick={() => setEngine(p.id)}
-                        disabled={isExtracting}
-                        title={p.description}
-                        className={`eng-btn${engine === p.id ? ' eng-active' : ''}`}
-                      >
-                        {p.short}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ color: '#7c3aed', fontSize: 11, marginTop: 5, lineHeight: 1.4 }}>
-                    {getProvider(engine).description}
-                  </div>
-                </div>
-
-                {/* Drop zone */}
-                <div
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={handleDrop}
-                  style={{
-                    margin: '12px 12px 6px',
-                    border: `2px dashed ${dragOver ? 'var(--accent)' : isExtracting ? 'var(--accent)' : '#c4b5fd'}`,
-                    borderRadius: 8,
-                    padding: '14px 12px',
-                    background: dragOver ? '#ede9fe' : '#ede9fe88',
-                    transition: 'all 0.15s',
-                    flexShrink: 0,
-                    cursor: 'default',
-                  }}
-                >
-                  {isExtracting ? (
-                    <div>
-                      <div style={{
-                        color: 'var(--accent)',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        marginBottom: 8,
-                        animation: 'pulse 1.4s ease-in-out infinite',
-                      }}>
-                        Extracting with AI...
-                      </div>
-                      <div style={{ height: 4, background: '#ddd6fe', borderRadius: 2 }}>
-                        <div style={{
-                          height: '100%',
-                          width: `${progress}%`,
-                          background: 'var(--accent)',
-                          borderRadius: 2,
-                          transition: 'width 0.15s ease',
-                        }} />
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <div style={{ color: '#5b21b6', fontSize: 13, fontWeight: 600, marginBottom: 3 }}>
-                        Drop invoice image here
-                      </div>
-                      <div style={{ color: '#7c3aed', fontSize: 12 }}>
-                        PDF or photo · simulates Claude Vision extraction
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Extraction error */}
-                {extractError && (
-                  <div style={{ margin: '0 12px 6px', padding: '8px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 6, color: '#b91c1c', fontSize: 12, lineHeight: 1.4 }}>
-                    ⚠ {extractError}
-                  </div>
-                )}
-
-                {/* /input folder ingestion — bundled at build time */}
-                <div style={{ margin: '4px 12px 8px', border: '1px solid #ddd6fe', borderRadius: 8, background: '#faf8ff', overflow: 'hidden' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderBottom: '1px solid #ede9fe' }}>
-                    <span style={{ color: '#5b21b6', fontSize: 12, fontWeight: 700 }}>
-                      📁 /input · {inputFileCount} detected
-                    </span>
-                    <button onClick={ingestInput} disabled={isExtracting} className="ingest-btn">
-                      Ingest all
-                    </button>
-                  </div>
-                  {inputFiles.map(f => (
+              {/* Extraction engine selector — Layer-1 seam */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: '#5b21b6', fontSize: 12, fontWeight: 700 }}>Engine</span>
+                <div style={{ display: 'flex', gap: 5 }}>
+                  {PROVIDERS.map(p => (
                     <button
-                      key={f.name}
-                      onClick={() => ingestOne(f)}
+                      key={p.id}
+                      onClick={() => setEngine(p.id)}
                       disabled={isExtracting}
-                      className="ingest-row"
-                      title={`${f.name}\n${f.scenario}`}
+                      title={p.description}
+                      className={`eng-btn${engine === p.id ? ' eng-active' : ''}`}
                     >
-                      <span style={{ fontSize: 12, color: '#1e293b', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {f.vendorPreview || f.name}
-                      </span>
-                      {f.totalPreview != null && (
-                        <span style={{ fontSize: 11, color: '#7c3aed', fontWeight: 700, whiteSpace: 'nowrap', marginLeft: 8 }}>
-                          ₹{f.totalPreview.toLocaleString()}
-                        </span>
-                      )}
+                      {p.short}
                     </button>
                   ))}
                 </div>
+              </div>
 
-                {/* Invoice list */}
-                <div style={{ flex: 1, overflowY: 'auto' }}>
-                  <InvoiceList
-                    results={results}
-                    selectedIdx={selectedIdx}
-                    onSelect={setSelectedIdx}
-                  />
+              <div style={{ width: 1, height: 26, background: '#ddd6fe' }} />
+
+              {/* /input ingestion — bundled at build time */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ color: '#5b21b6', fontSize: 12, fontWeight: 700 }}>📁 /input · {inputFileCount}</span>
+                <button onClick={ingestInput} disabled={isExtracting} className="ingest-btn">Ingest all</button>
+                {inputFiles.map(f => (
+                  <button
+                    key={f.name}
+                    onClick={() => ingestOne(f)}
+                    disabled={isExtracting}
+                    className="ingest-chip"
+                    title={`${f.name}\n${f.scenario}`}
+                  >
+                    {f.vendorPreview || f.name}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ flex: 1, minWidth: 12 }} />
+
+              {/* Drop zone + demo */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  border: `1.5px dashed ${dragOver || isExtracting ? 'var(--accent)' : '#c4b5fd'}`,
+                  borderRadius: 8, padding: '6px 12px', background: dragOver ? '#ede9fe' : '#ede9fe88',
+                  minWidth: 200,
+                }}
+              >
+                {isExtracting ? (
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: 'var(--accent)', fontSize: 12, fontWeight: 600, marginBottom: 4, animation: 'pulse 1.4s ease-in-out infinite' }}>
+                      Extracting with AI…
+                    </div>
+                    <div style={{ height: 4, background: '#ddd6fe', borderRadius: 2 }}>
+                      <div style={{ height: '100%', width: `${progress}%`, background: 'var(--accent)', borderRadius: 2, transition: 'width 0.15s ease' }} />
+                    </div>
+                  </div>
+                ) : (
+                  <span style={{ color: '#5b21b6', fontSize: 12, fontWeight: 600 }}>⬇ Drop invoice to extract</span>
+                )}
+              </div>
+              <button onClick={runDemo} disabled={isExtracting} className="demo-btn" style={{ opacity: isExtracting ? 0.5 : 1, cursor: isExtracting ? 'not-allowed' : 'pointer' }}>
+                ▶ Run demo
+              </button>
+
+              {extractError && (
+                <div style={{ flexBasis: '100%', padding: '6px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 6, color: '#b91c1c', fontSize: 12 }}>
+                  ⚠ {extractError}
                 </div>
-              </div>
-
-              {/* Detail panel — clean white */}
-              <div style={{ flex: 1, overflow: 'hidden', background: '#ffffff', display: 'flex', flexDirection: 'column' }}>
-                <DetailPanel result={results[selectedIdx] || null} />
-              </div>
+              )}
             </div>
-          </div>
-        )}
 
-        {/* ── Tab 0: Batch Pipeline ── */}
-        {activeTab === 0 && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <BatchFunnel
               batch={batch}
               activeFilter={worklistFilter}
@@ -567,14 +444,10 @@ export default function App() {
                 {selectedPinv ? (
                   <>
                     <InvoiceStepper pinv={selectedPinv} activeStage={activeStage} onStageClick={setActiveStage} />
-                    {extractError && (
-                      <div style={{ margin: '0 18px 8px', padding: '8px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 6, color: '#b91c1c', fontSize: 12 }}>
-                        ⚠ {extractError}
-                      </div>
-                    )}
                     {activeStage === 'extract' && selectedPinv.extraction ? (
                       <ExtractionInspector
                         pinv={selectedPinv}
+                        busy={isExtracting}
                         onEditField={onEditField}
                         onReextract={onReextract}
                         onAccept={onAcceptExtract}
@@ -585,7 +458,7 @@ export default function App() {
                           <DetailPanel result={selectedPinv.routed} />
                         ) : (
                           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13, padding: 24, textAlign: 'center' }}>
-                            Synthetic batch invoice — full extraction &amp; validation detail is available for the 12 real invoices (samples + /input). Click the Extract node for invoices that have a source document.
+                            Synthetic batch invoice — full extraction &amp; validation detail is available for the 12 real invoices (samples + /input) and anything you ingest. Click the Extract node for invoices that have a source document.
                           </div>
                         )}
                       </div>
@@ -601,13 +474,12 @@ export default function App() {
           </div>
         )}
 
-        {/* ── Tab 2: Eval Dashboard ── */}
-        {activeTab === 2 && (
+        {/* ── Tab 1: Eval Dashboard ── */}
+        {activeTab === 1 && (
           <div style={{ flex: 1, overflowY: 'auto' }}>
             <EvalDashboard results={results} />
           </div>
         )}
-
 
       </div>
 
@@ -649,7 +521,7 @@ export default function App() {
 
         /* Tolerance buttons */
         .tol-btn {
-          padding: 6px 14px;
+          padding: 5px 12px;
           background: #fff;
           border: 1.5px solid #cbd5e1;
           border-radius: 6px;
@@ -697,8 +569,7 @@ export default function App() {
 
         /* Extraction engine buttons */
         .eng-btn {
-          flex: 1;
-          padding: 6px 8px;
+          padding: 6px 12px;
           background: #fff;
           border: 1.5px solid #ddd6fe;
           border-radius: 6px;
@@ -723,12 +594,12 @@ export default function App() {
 
         /* /input ingestion buttons */
         .ingest-btn {
-          padding: 4px 10px;
+          padding: 5px 12px;
           background: #ede9fe;
           border: 1px solid #c4b5fd;
-          border-radius: 5px;
+          border-radius: 6px;
           color: #6d28d9;
-          font-size: 11px;
+          font-size: 12px;
           font-weight: 700;
           font-family: 'IBM Plex Mono', monospace;
           cursor: pointer;
@@ -736,21 +607,24 @@ export default function App() {
         }
         .ingest-btn:hover:not(:disabled) { background: #ddd6fe; }
         .ingest-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .ingest-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          width: 100%;
-          padding: 7px 10px;
-          background: transparent;
-          border: none;
-          borderBottom: 1px solid #ede9fe;
-          text-align: left;
+        .ingest-chip {
+          padding: 5px 10px;
+          background: #faf8ff;
+          border: 1px solid #ede9fe;
+          border-radius: 6px;
+          color: #1e293b;
+          font-size: 12px;
+          font-weight: 600;
+          font-family: 'IBM Plex Mono', monospace;
           cursor: pointer;
+          max-width: 170px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
           transition: background 0.1s;
         }
-        .ingest-row:hover:not(:disabled) { background: #f0ebff; }
-        .ingest-row:disabled { opacity: 0.6; cursor: not-allowed; }
+        .ingest-chip:hover:not(:disabled) { background: #f0ebff; border-color: #c4b5fd; }
+        .ingest-chip:disabled { opacity: 0.6; cursor: not-allowed; }
       `}</style>
     </div>
   );
