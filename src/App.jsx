@@ -12,6 +12,7 @@ import BatchFunnel from './components/BatchFunnel.jsx';
 import Worklist from './components/Worklist.jsx';
 import InvoiceStepper from './components/InvoiceStepper.jsx';
 import ExtractionInspector from './components/ExtractionInspector.jsx';
+import MappingPanel from './components/MappingPanel.jsx';
 
 const TABS = ['Batch Pipeline', 'AI Eval & STP Trend'];
 const TOLERANCES = [1, 2, 3, 5];
@@ -452,6 +453,8 @@ export default function App() {
                         onReextract={onReextract}
                         onAccept={onAcceptExtract}
                       />
+                    ) : activeStage === 'validate' && selectedPinv.mapping ? (
+                      <MappingPanel pinv={selectedPinv} />
                     ) : (
                       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                         {selectedPinv.routed ? (

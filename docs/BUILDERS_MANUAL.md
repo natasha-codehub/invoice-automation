@@ -11,9 +11,9 @@
 
 | | |
 |---|---|
-| **Current phase** | Phase B ✓ + §6 tab decision ✓ (browser-verified) → next is **Phase C** |
-| **Last worked** | 2026-06-17 (merged Invoice Processor → Batch Pipeline, retired the tab; adopted Rosetta PDF/worklist UX patterns) |
-| **Next action** | Phase C · C1 — `src/data/erpCatalog.js` (see §4) |
+| **Current phase** | Phase C ✓ (browser-verified) → next is **Phase D** (ingest & segmentation) |
+| **Last worked** | 2026-06-19 (Phase C: ERP mapping engine, three-way match, jurisdiction-aware tax, MappingPanel at the Validate stage) |
+| **Next action** | Phase D · D1 — segmentation step (1 file ≠ 1 invoice); see §5 Phase D |
 | **Dev server** | `npm run dev` → http://localhost:5173 |
 | **Verify a change** | run app in browser (system Chrome via playwright-core), screenshot the surface — never "tests pass" |
 
@@ -205,14 +205,16 @@ Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.
 
 ### Phase C — Stage ③ deep: ERP mapping & validation
 **Goal:** the differentiator — line items mapped to ERP, three-way match, confidence routing.
-- [ ] C1. `src/data/erpCatalog.js` from §4.
-- [ ] C2. `src/pipeline/mapping.js` — exact→alias→fuzzy→unmatched; UoM check; GL/tax enrichment; per-line TraceEntry.
-- [ ] C3. **Three-way match** PO ↔ GoodsReceipt(mock) ↔ Invoice (the Haun 143/200 partial-ship case must surface here).
-- [ ] C4. Confidence-based routing **at this layer** (low map-confidence or unmatched material → HITL).
-- [ ] C5. Mapping panel in the inspector: each line `rawDesc → matchedMaterial (matchType, conf)`, GL, UoM, enrichment, with traces.
-- [ ] C6. Replace the India-specific 18% GST check with a **jurisdiction-aware** tax check (kills the false-flag on the USD invoices).
+- [x] C1. `src/data/erpCatalog.js` from §4 (+ `MAT_BY_ID`; `taxClass` per material drives C6).
+- [x] C2. `src/pipeline/mapping.js` — exact→alias→fuzzy→unmatched; multi-parenthetical part extraction; GL/UoM/tax enrichment; per-line TraceEntry.
+- [x] C3. **Three-way match** PO ↔ GoodsReceipt ↔ Invoice. Mock GR in `src/data/goodsReceipts.js` (decision logged §6). Haun-Scranton 200-ordered/143-received surfaces as `partial`.
+- [x] C4. Confidence-based routing **at this layer**: unmatched material OR min map-confidence < 0.6 floors Validate at needs_review (status ladder in `runPipeline.js`).
+- [x] C5. `src/components/MappingPanel.jsx` — shown at the **Validate** stage: three-way table, per-line `rawDesc → material (matchType chip, conf)`, GL, UoM, enrichment, validation checks.
+- [x] C6. Tax check is now **jurisdiction-aware** (`inferJurisdiction` in validationEngine.js): USD gas-for-resale → exempt (no false 18% GST flag); INR → GST 18%. Bundled invoices stamped `currency:'USD'`.
 
-**Done when:** the 4 real invoices map their cylinder lines to MAT-* via the right matchType (exact/alias/fuzzy); Haun-Scranton flags partial-ship in three-way match; one invented unmatched line routes to HITL with a suggested fix.
+**Done when:** ✓ VERIFIED 2026-06-19 (browser) — Vern Lewis maps 5 lines via ALIAS + 3 fees via FUZZY; Haun-Albany Propane resolves via ALIAS 96% (multi-paren fix); Haun-Scranton shows the PARTIAL SHIPMENT three-way banner (Ordered 200 / Received 143 / Invoiced 143) and routes needs_review; Xpedited "Oxygen 20 gas" is UNMATCHED → HITL with suggested fix MAT-O2-17, while its other 6 lines map. Funnel: Validate & Map 10% HITL, Route 811.
+
+> **Known shallow edges (revisit later):** currency *display* is still ₹ across the worklist/funnel/DetailPanel for the USD invoices (only the tax *check* is jurisdiction-aware) — cosmetic, fold into Phase G polish with a currency helper. Mapping runs on the 12 real + ingested invoices only (synthetic fill keeps its pre-baked stage states). HITL "apply suggested fix" action is Phase E.
 
 ### Phase D — Stage ① deep: ingest & segmentation
 **Goal:** 1 file ≠ 1 invoice.
@@ -249,7 +251,7 @@ Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.
 ## 6. Open decisions log (append as they come up)
 - [x] **Invoice Processor tab role** (raised 2026-06-17, resolved 2026-06-17): **chose B — merged & retired.** Tolerance dial, engine selector, drop-zone, `/input` ingest, and Run demo now live in a control toolbar atop the Batch Pipeline tab; ingests flow into the worklist as `PipelineInvoice`s (top-pinned, auto-selected, opened at Extract). Tolerance re-pipes only the real + ingested invoices (synthetic fill stays stable). Eval consumes the unified model (`displayInvoices.filter(routed).map(routed)`). Also borrowed two Rosetta UX patterns (kept current identity): richer worklist rows (source/scenario subline + confidence + NEW marker) and a PDF-viewer chrome with a styled mock-page fallback when there's no source PDF. `InvoiceList.jsx` is now unused.
 - [ ] PDF renderer: `pdf.js` (real, heavier) vs `<embed>`/`<iframe>` (simple, browser-native)?
-- [ ] Mock "goods receipt" data source for three-way match — inline in catalog or separate file?
+- [x] Mock "goods receipt" data source for three-way match (raised + resolved 2026-06-19): **separate file** `src/data/goodsReceipts.js`, keyed by *normalised* PO. Reason: a goods receipt is a different system of record (receiving) from the item master, and keeping it apart lets `threeWayMatch` reconcile ordered/received/invoiced without coupling to the catalog.
 - [ ] Worklist virtualization: hand-rolled windowing vs a tiny lib (keep zero-dep ethos?).
 - [ ] Where the corrections/alias store lives (in-memory vs localStorage for demo persistence).
 

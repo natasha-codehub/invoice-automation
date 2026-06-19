@@ -12,7 +12,14 @@
 
 import { routeInvoice } from '../utils/router.js';
 import { checkConsistency } from './consistency.js';
+import { mapInvoice, threeWayMatch } from './mapping.js';
 import { STAGES, STATUS, FLOW_ON, mkStage, deriveOverall, TOUCHLESS } from './model.js';
+
+// Status severity ladder, so a stage can be *floored* at a worse status without
+// ever upgrading something already worse (e.g. mapping can push passed→review,
+// but never rescue a validation FAILED).
+const RANK = { passed: 0, auto_resolved: 1, needs_review: 2, failed: 3, running: 0, pending: 0 };
+const atLeast = (cur, floor) => (RANK[floor] > RANK[cur] ? floor : cur);
 
 // Stage ① — Ingest/Segment. Trivial pass until Phase D.
 function ingestStage() {
@@ -55,13 +62,39 @@ const BUCKET_TO_STATUS = {
   AUTO_REJECTED:    STATUS.FAILED,
 };
 
-// Stage ③ — Validate & Map. Wraps the existing router/checks (placeholder).
-function validateStage(routed) {
-  const status = BUCKET_TO_STATUS[routed.bucket] || STATUS.REVIEW;
+// Stage ③ — Validate & Map (Phase C). The existing router/checks now run
+// alongside ERP line mapping + the three-way match, and the stage routes on the
+// minimum critical confidence across all three (Manual §3 confidence rule).
+function validateStage(invoice, routed, mapping, threeWay) {
+  let status = BUCKET_TO_STATUS[routed.bucket] || STATUS.REVIEW;
   const issues = routed.checks
     .filter(c => !c.passed)
     .map(c => ({ severity: c.fatal ? 'error' : 'warn', field: c.id, message: c.detail }));
-  return mkStage(status, null, issues);
+
+  // Mapping-driven routing: an unmapped material can't post, low map-confidence
+  // is unsafe to auto-approve → both floor the stage at needs_review.
+  for (const l of mapping.lines) {
+    if (l.matchType === 'unmatched') {
+      issues.unshift({ severity: 'warn', field: 'mapping',
+        message: `Unmapped line "${l.rawDesc}" — no catalog match${l.suggestedFix ? `; suggest ${l.suggestedFix}` : ''}` });
+      status = atLeast(status, STATUS.REVIEW);
+    }
+  }
+  if (mapping.minConfidence != null && mapping.minConfidence < 0.6) {
+    status = atLeast(status, STATUS.REVIEW);
+  }
+
+  // Three-way match: a partial shipment is a soft hold; billing past the receipt
+  // is a leakage risk and gets an error.
+  if (threeWay.status === 'partial') {
+    issues.unshift({ severity: 'warn', field: 'three_way', message: threeWay.detail });
+    status = atLeast(status, STATUS.REVIEW);
+  } else if (threeWay.status === 'over_billed') {
+    issues.unshift({ severity: 'error', field: 'three_way', message: threeWay.detail });
+    status = atLeast(status, STATUS.REVIEW);
+  }
+
+  return mkStage(status, mapping.minConfidence, issues);
 }
 
 // Stage ④ — Route/Post. Reached only when validate flowed on → posted.
@@ -73,12 +106,16 @@ export function runPipeline(invoice, tolerance = 2, batchId = 'batch', opts = {}
   const stages = { ingest: undefined, extract: undefined, validate: undefined, route: undefined };
   let routed = null;
 
+  let mapping = null;
+  let threeWay = null;
   stages.ingest = ingestStage(invoice);
   if (FLOW_ON.has(stages.ingest.status)) {
     stages.extract = extractStage(invoice, opts);
     if (FLOW_ON.has(stages.extract.status)) {
       routed = routeInvoice(invoice, tolerance);
-      stages.validate = validateStage(routed);
+      mapping = mapInvoice(invoice, routed.normalisedVendor);
+      threeWay = threeWayMatch(invoice, routed.normalisedPO, mapping);
+      stages.validate = validateStage(invoice, routed, mapping, threeWay);
       if (FLOW_ON.has(stages.validate.status)) {
         stages.route = routeStage(routed);
       }
@@ -92,6 +129,10 @@ export function runPipeline(invoice, tolerance = 2, batchId = 'batch', opts = {}
     ...(opts.extraTraces || []),
     ...(routed?.corrections || []).map(c => ({
       field: 'normalisation', actor: 'rule:normalise', message: c, reversible: true,
+    })),
+    ...(mapping?.lines || []).map(l => ({
+      ...l.trace,
+      message: `Mapped "${l.rawDesc}" → ${l.matchedMaterialId || 'UNMATCHED'} (${l.matchType}, ${Math.round(l.confidence * 100)}%)`,
     })),
   ];
 
@@ -108,6 +149,8 @@ export function runPipeline(invoice, tolerance = 2, batchId = 'batch', opts = {}
     sourceFile: invoice.sourceFile || null,
     extraction: invoice.confidence != null ? invoice : null,
     routed,
+    mapping,
+    threeWay,
     stages,
     currentStage: stoppedAt,
     overallStatus,

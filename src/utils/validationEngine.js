@@ -30,6 +30,18 @@ const VENDOR_ALIASES = {
   "Haun Welding Supply":       "Haun Welding Supply Inc",
 };
 
+// ─── Jurisdiction ────────────────────────────────────────────────────────────
+// Where the invoice was issued, so the tax check applies the right regime.
+// Explicit `currency` wins; otherwise sniff the raw document ("(USD)" / "$" → US),
+// defaulting to India (the original sample set is INR/GST).
+function inferJurisdiction(inv) {
+  const cur = (inv.currency || '').toUpperCase();
+  if (cur === 'USD' || cur === 'US') return 'US';
+  if (cur === 'INR' || cur === 'IN') return 'IN';
+  if (/\(USD\)|\bUSD\b|\$/.test(inv.rawText || '')) return 'US';
+  return 'IN';
+}
+
 // ─── Normalisation ───────────────────────────────────────────────────────────
 function normalise(invoice) {
   const corrections = [];
@@ -132,20 +144,39 @@ export function validateInvoice(invoice, tolerancePercent = 2) {
     detail: lineRecDetail,
   });
 
-  // CHECK 5 — TAX COMPLIANCE [SOFT]
+  // CHECK 5 — TAX COMPLIANCE [SOFT] — jurisdiction-aware (Builder's Manual C6)
+  // The old check assumed Indian GST 18% on every invoice, which false-flagged the
+  // USD gas invoices (no GST line). Now we branch on jurisdiction: India → 18% GST;
+  // US → sales tax, where industrial gas bought for resale is typically exempt, so
+  // a $0/absent tax line is expected, not a violation.
+  const jurisdiction = inferJurisdiction(corrected);
   let taxPassed = true;
+  let taxLabel = 'Tax Compliance';
   let taxDetail = 'Tax not provided';
-  if (corrected.subtotal !== undefined && corrected.tax !== undefined) {
-    const expectedTax = corrected.subtotal * 0.18;
-    const taxDiff = Math.abs(corrected.tax - expectedTax);
-    taxPassed = taxDiff <= 1;
-    taxDetail = taxPassed
-      ? `Tax ₹${corrected.tax} matches 18% of subtotal ₹${corrected.subtotal} (expected ₹${expectedTax.toFixed(2)})`
-      : `Tax ₹${corrected.tax} ≠ expected ₹${expectedTax.toFixed(2)} (18% of ₹${corrected.subtotal}) — difference ₹${taxDiff.toFixed(2)}`;
+  if (jurisdiction === 'IN') {
+    taxLabel = 'Tax Compliance (GST 18%)';
+    if (corrected.subtotal !== undefined && corrected.tax !== undefined) {
+      const expectedTax = corrected.subtotal * 0.18;
+      const taxDiff = Math.abs(corrected.tax - expectedTax);
+      taxPassed = taxDiff <= 1;
+      taxDetail = taxPassed
+        ? `Tax ₹${corrected.tax} matches 18% GST of subtotal ₹${corrected.subtotal} (expected ₹${expectedTax.toFixed(2)})`
+        : `Tax ₹${corrected.tax} ≠ expected ₹${expectedTax.toFixed(2)} (18% GST of ₹${corrected.subtotal}) — difference ₹${taxDiff.toFixed(2)}`;
+    } else {
+      taxDetail = 'GST not provided on document';
+    }
+  } else {
+    // US sales tax. Gas-for-resale is exempt; $0 / no tax line is the expected case.
+    taxLabel = 'Tax Compliance (US sales tax)';
+    const tax = corrected.tax || 0;
+    taxPassed = true; // never false-reject on an expected exemption
+    taxDetail = tax === 0
+      ? 'US sales tax $0.00 — consistent with industrial-gas resale exemption'
+      : `US sales tax $${tax} present — verify taxability for this jurisdiction`;
   }
   checks.push({
     id: 'TAX_COMPLIANCE',
-    label: 'Tax Compliance (GST 18%)',
+    label: taxLabel,
     passed: taxPassed,
     fatal: false,
     detail: taxDetail,
