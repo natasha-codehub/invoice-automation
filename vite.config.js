@@ -2,10 +2,18 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
-// `base` is the project-Pages subpath in production (the site lives at
-// natasha-codehub.github.io/invoice-automation/), but stays at root for local
-// `npm run dev` / `npm run preview` so nothing changes about running it locally.
-export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/invoice-automation/' : '/',
-  plugins: [react()],
-}))
+// The app is hosted in two places, which need different base paths, so `base` is
+// host-aware:
+//   - Vercel  → served at the domain root, so base '/'. Vercel sets the VERCEL
+//               env var during its build, which is how we detect it.
+//   - GitHub Pages (project site) → served under /invoice-automation/, so the
+//               GitHub Actions build (no VERCEL var) uses that subpath.
+//   - Local dev/preview → root, so `npm run dev` is unchanged.
+export default defineConfig(({ command }) => {
+  const isProdBuild = command === 'build'
+  const onVercel = !!process.env.VERCEL
+  return {
+    base: isProdBuild && !onVercel ? '/invoice-automation/' : '/',
+    plugins: [react()],
+  }
+})
