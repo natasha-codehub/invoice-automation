@@ -14,6 +14,18 @@ export default function InvoiceStepper({ pinv, activeStage, onStageClick }) {
         {pinv.total != null && <span style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>₹{pinv.total.toLocaleString()}</span>}
       </div>
 
+      {/* Provenance subline — for invoices split out of a multi-invoice statement (Phase D) */}
+      {pinv.provenance?.kind === 'statement-segment' && (
+        <div style={{ padding: '0 20px 6px', fontSize: 11, color: '#7c3aed', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>↳</span>
+          <span>
+            segment <b>{pinv.provenance.segmentIndex}/{pinv.provenance.segmentCount}</b> of statement{' '}
+            <span style={{ fontWeight: 600 }}>{pinv.provenance.sourceFile}</span> · source page{' '}
+            <b>{pinv.provenance.sourcePage}</b> of {pinv.provenance.pageCount} ({pinv.provenance.lineRange})
+          </span>
+        </div>
+      )}
+
       {/* Stepper nodes */}
       <div style={{ display: 'flex', alignItems: 'center', padding: '10px 20px 14px' }}>
         {STAGES.map((stage, idx) => {

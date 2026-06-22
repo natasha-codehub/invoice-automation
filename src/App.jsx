@@ -3,6 +3,8 @@ import { sampleInvoices } from './data/invoices.js';
 import { DEMO_MATHESON } from './utils/mockExtractor.js';
 import { runExtraction, PROVIDERS, getProvider } from './utils/extraction/providers.js';
 import { inputFiles, inputFileCount } from './data/inputInvoices.js';
+import { SHARPGAS_STATEMENT } from './data/statements.js';
+import { segmentDocument } from './pipeline/segmentation.js';
 import { bundledInvoices, generateSynthetic } from './pipeline/generateBatch.js';
 import { runPipeline } from './pipeline/runPipeline.js';
 import { aggregateBatch } from './pipeline/aggregateBatch.js';
@@ -241,6 +243,37 @@ export default function App() {
     }
   }, [isExtracting, extractAndInject, startProgressAnimation, finishProgress]);
 
+  // Ingest a multi-transaction statement: one file → segmentation → N invoices,
+  // each pinned to the worklist with provenance back to its source page (Phase D).
+  // Reversed so segment 1 lands on top and gets selected.
+  const ingestStatement = useCallback(async () => {
+    if (isExtracting) return;
+    setIsExtracting(true);
+    setActiveTab(0);
+    setExtractError('');
+    startProgressAnimation();
+    try {
+      await new Promise(r => setTimeout(r, 500));
+      const segments = segmentDocument(SHARPGAS_STATEMENT);
+      for (const seg of [...segments].reverse()) {
+        const p = seg.provenance;
+        injectLiveInvoice(
+          { ...seg, extractionEngine: 'Demo', extractionEngineId: 'demo' },
+          `SEG${p.segmentIndex}`,
+          seg.scenario,
+          { name: p.sourceFile },
+        );
+      }
+      finishProgress();
+    } catch (err) {
+      console.error('Segmentation error:', err);
+      setExtractError(err.message || 'Statement segmentation failed');
+      finishProgress();
+    } finally {
+      setIsExtracting(false);
+    }
+  }, [isExtracting, injectLiveInvoice, startProgressAnimation, finishProgress]);
+
   // Ingest the whole /input batch (reversed so the first file lands on top)
   const ingestInput = useCallback(async () => {
     if (isExtracting) return;
@@ -380,6 +413,14 @@ export default function App() {
                     {f.vendorPreview || f.name}
                   </button>
                 ))}
+                <button
+                  onClick={ingestStatement}
+                  disabled={isExtracting}
+                  className="ingest-chip statement-chip"
+                  title={`${SHARPGAS_STATEMENT.sourceFile}\nMulti-invoice statement — splits into ${SHARPGAS_STATEMENT.transactions.length} invoices, one per source page`}
+                >
+                  📄 Statement → {SHARPGAS_STATEMENT.transactions.length}
+                </button>
               </div>
 
               <div style={{ flex: 1, minWidth: 12 }} />
@@ -628,6 +669,13 @@ export default function App() {
         }
         .ingest-chip:hover:not(:disabled) { background: #f0ebff; border-color: #c4b5fd; }
         .ingest-chip:disabled { opacity: 0.6; cursor: not-allowed; }
+        .statement-chip {
+          background: #ede9fe;
+          border: 1px dashed #a78bfa;
+          color: #6d28d9;
+          font-weight: 700;
+        }
+        .statement-chip:hover:not(:disabled) { background: #ddd6fe; border-color: #7c3aed; }
       `}</style>
     </div>
   );

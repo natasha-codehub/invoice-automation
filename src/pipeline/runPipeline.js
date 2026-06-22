@@ -21,8 +21,19 @@ import { STAGES, STATUS, FLOW_ON, mkStage, deriveOverall, TOUCHLESS } from './mo
 const RANK = { passed: 0, auto_resolved: 1, needs_review: 2, failed: 3, running: 0, pending: 0 };
 const atLeast = (cur, floor) => (RANK[floor] > RANK[cur] ? floor : cur);
 
-// Stage ① — Ingest/Segment. Trivial pass until Phase D.
-function ingestStage() {
+// Stage ① — Ingest/Segment (Phase D). A plain single-invoice file passes
+// through. A document that was split from a statement carries provenance back to
+// its source page; the split is a system enrichment → auto_resolved ↺ with the
+// page it came from, so the funnel shows segmentation happening at intake.
+function ingestStage(invoice) {
+  const p = invoice.provenance;
+  if (p && p.kind === 'statement-segment') {
+    return mkStage(STATUS.AUTO, null, [{
+      severity: 'info',
+      field: 'segmentation',
+      message: `Split from statement ${p.sourceFile} — invoice ${p.segmentIndex} of ${p.segmentCount}, source page ${p.sourcePage} of ${p.pageCount} (${p.lineRange})`,
+    }]);
+  }
   return mkStage(STATUS.PASSED);
 }
 
@@ -125,7 +136,16 @@ export function runPipeline(invoice, tolerance = 2, batchId = 'batch', opts = {}
 
   const { overallStatus, stoppedAt } = deriveOverall(stages);
 
+  const prov = invoice.provenance || null;
   const traces = [
+    ...(prov?.kind === 'statement-segment' ? [{
+      field: 'segmentation',
+      from: prov.sourceFile,
+      to: `invoice ${prov.segmentIndex}/${prov.segmentCount} (page ${prov.sourcePage})`,
+      actor: 'rule:segment',
+      message: `Segmented from statement ${prov.sourceFile} — page ${prov.sourcePage} of ${prov.pageCount}`,
+      reversible: false,
+    }] : []),
     ...(opts.extraTraces || []),
     ...(routed?.corrections || []).map(c => ({
       field: 'normalisation', actor: 'rule:normalise', message: c, reversible: true,
@@ -147,6 +167,7 @@ export function runPipeline(invoice, tolerance = 2, batchId = 'batch', opts = {}
     fieldConfidence: invoice.fieldConfidence || null,
     sourceUrl: invoice.sourceUrl || null,
     sourceFile: invoice.sourceFile || null,
+    provenance: prov,
     extraction: invoice.confidence != null ? invoice : null,
     routed,
     mapping,

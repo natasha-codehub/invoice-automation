@@ -27,13 +27,28 @@ export function aggregateBatch(invoices, batchId = 'batch') {
 
   const total = invoices.length;
   let touchless = 0, review = 0, failed = 0, valueAtRisk = 0, valueTotal = 0;
+  // Intake/segmentation accounting (Stage ①): files received vs invoices produced.
+  let segments = 0, rejectedAtIntake = 0;
+  const parentDocs = new Set();
   for (const inv of invoices) {
     if (TOUCHLESS.has(inv.overallStatus)) touchless += 1;
     else if (inv.overallStatus === STATUS.FAILED) failed += 1;
     else review += 1;
     valueAtRisk += inv.valueAtRisk || 0;
     valueTotal += inv.total || 0;
+
+    if (inv.provenance?.kind === 'statement-segment') {
+      segments += 1;
+      parentDocs.add(inv.provenance.parentDocId);
+    }
+    if (inv.stages.ingest?.status === STATUS.FAILED) rejectedAtIntake += 1;
   }
+
+  // One statement file fans out into N invoices, so the file count is the
+  // single-invoice docs plus one file per distinct statement.
+  const statements = parentDocs.size;
+  const singles = total - segments;
+  const filesReceived = singles + statements;
 
   return {
     id: batchId,
@@ -44,5 +59,12 @@ export function aggregateBatch(invoices, batchId = 'batch') {
     failed,
     valueAtRisk,
     valueTotal,
+    intake: {
+      filesReceived,
+      invoices: total,
+      statements,
+      segments,
+      rejectedAtIntake,
+    },
   };
 }

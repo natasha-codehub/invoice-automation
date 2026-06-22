@@ -28,4 +28,8 @@ export const openPOs = {
   "40392712":    { amount: 455.00, description: "Xpedited Gas — gas delivery (intentionally 3% under to exercise the tolerance dial)" },
   "PO05032790":  { amount: 559.75, description: "Haun Welding — oxygen USP (Waymart)" },
   "PO-02050543": { amount: 249.31, description: "Haun Welding — mixed gas (Lagrangeville)" },
+  // Sharpgas Q1 statement — one PO per transaction (the statement segments into 3)
+  "PO-SG-0118":  { amount: 3350.0,  description: "Sharpgas — propane statement (Jan)" },
+  "PO-SG-0210":  { amount: 3262.5,  description: "Sharpgas — propane statement (Feb)" },
+  "PO-SG-0315":  { amount: 3500.0,  description: "Sharpgas — propane statement (Mar)" },
 };

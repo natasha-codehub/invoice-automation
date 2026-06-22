@@ -13,8 +13,37 @@ function Stat({ label, value, color }) {
 
 export default function BatchFunnel({ batch, activeFilter, onSegmentClick }) {
   const money = (n) => `₹${Math.round(n).toLocaleString()}`;
+  const intake = batch.intake;
   return (
     <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', background: '#fafbff' }}>
+      {/* Intake strip — Stage ① accounting: files in vs invoices out (Phase D) */}
+      {intake && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          marginBottom: 12, fontSize: 11.5, color: '#475569',
+          background: '#f1edff', border: '1px solid #e0d9fb', borderRadius: 6, padding: '6px 12px',
+        }}>
+          <span style={{ fontWeight: 700, color: '#5b21b6' }}>📥 Intake</span>
+          <span><b>{intake.filesReceived.toLocaleString()}</b> files received</span>
+          <span style={{ color: '#cbd5e1' }}>→</span>
+          <span><b>{intake.invoices.toLocaleString()}</b> invoices</span>
+          {intake.statements > 0 && (
+            <>
+              <span style={{ color: '#cbd5e1' }}>·</span>
+              <span style={{ color: '#6d28d9' }}>
+                <b>{intake.statements}</b> statement{intake.statements > 1 ? 's' : ''} segmented into <b>{intake.segments}</b>
+              </span>
+            </>
+          )}
+          <span style={{ color: '#cbd5e1' }}>·</span>
+          <span style={{ color: intake.rejectedAtIntake > 0 ? '#dc2626' : '#94a3b8' }}>
+            <b>{intake.rejectedAtIntake.toLocaleString()}</b> rejected at intake
+          </span>
+          <span style={{ color: '#cbd5e1' }}>·</span>
+          <span style={{ color: '#94a3b8' }}>100% PDF</span>
+        </div>
+      )}
+
       {/* Summary strip */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 36, marginBottom: 16 }}>
         <Stat label="Invoices in batch" value={batch.totalCount.toLocaleString()} />

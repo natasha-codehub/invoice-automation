@@ -11,9 +11,9 @@
 
 | | |
 |---|---|
-| **Current phase** | Phase C ✓ (browser-verified) → next is **Phase D** (ingest & segmentation) |
-| **Last worked** | 2026-06-19 (Phase C: ERP mapping engine, three-way match, jurisdiction-aware tax, MappingPanel at the Validate stage) |
-| **Next action** | Phase D · D1 — segmentation step (1 file ≠ 1 invoice); see §5 Phase D |
+| **Current phase** | Phase D ✓ (browser-verified) → next is **Phase E** (HITL flywheel + provenance drawer) |
+| **Last worked** | 2026-06-22 (Phase D: statement segmentation 1 file → N invoices w/ source-page provenance, intake summary strip, segmentation-aware ingest stage) |
+| **Next action** | Phase E · E1 — keyboard-first reviewer UI with suggested-fix pre-fill; see §5 Phase E |
 | **Dev server** | `npm run dev` → http://localhost:5173 |
 | **Verify a change** | run app in browser (system Chrome via playwright-core), screenshot the surface — never "tests pass" |
 
@@ -218,11 +218,13 @@ Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.
 
 ### Phase D — Stage ① deep: ingest & segmentation
 **Goal:** 1 file ≠ 1 invoice.
-- [ ] D1. Segmentation step: a statement/multi-invoice doc (Sharpgas-style) splits into N PipelineInvoices with `sourcePage`.
-- [ ] D2. Batch intake summary (counts, file types, rejected-at-intake).
-- [ ] D3. Per-segment provenance back to the source page.
+- [x] D1. Segmentation step: a statement/multi-invoice doc (Sharpgas-style) splits into N PipelineInvoices with `sourcePage`. `src/data/statements.js` (Sharpgas Q1 statement, 3 transactions) + `src/pipeline/segmentation.js` (`segmentDocument` → N extractions, each stamped with `provenance{parentDocId,sourceFile,sourcePage,segmentIndex/Count,lineRange}`). Toolbar "📄 Statement → 3" action mirrors `/input` ingest.
+- [x] D2. Batch intake summary (counts, file types, rejected-at-intake). `aggregateBatch` now emits `intake{filesReceived,invoices,statements,segments,rejectedAtIntake}` (one statement file fans out into N invoices; rejected = ingest-stage failures). Rendered as a strip atop `BatchFunnel`.
+- [x] D3. Per-segment provenance back to the source page. `runPipeline` ingest stage is segmentation-aware (segment → `auto_resolved` ↺ + "Split from statement … page X of N" issue + a `rule:segment` TraceEntry); `InvoiceStepper` shows a provenance subline; `runPipeline` copies `provenance` onto the PipelineInvoice.
 
-**Done when:** a multi-transaction statement enters as 1 file and appears as N invoices in the funnel/worklist, each traceable to its page.
+**Done when:** ✓ VERIFIED 2026-06-22 (browser) — clicking "📄 Statement → 3" splits Sharpgas-Statement-Q1-2024.pdf into 3 invoices in the worklist; intake strip reads "1,001 files received → 1,003 invoices · 1 statement segmented into 3 · 14 rejected at intake". The 3 segments route **independently to different stages** (the proof they're real invoices): seg1 (nitrogen cyl, maps clean) → touchless through Route; seg2 (propane billed by the gallon, no catalog match) → stops at Validate; seg3 (faint print, conf 0.58) → stops at Extract. Each stepper shows "↳ segment N/3 of statement … source page N of 3"; the Ingest node shows the split issue + `rule:segment` trace.
+
+> **Known shallow edges (revisit later):** segmentation is the interactive ingest path (one bundled statement), not auto-applied to the synthetic fill — the intake strip reflects it live once ingested. Sharpgas POs (`PO-SG-0118/0210/0315`) were added to `vendorMaster.openPOs` so seg1 can reconcile and reach STP. Statement currency is INR so the GST-18% check fires (display still ₹, consistent with the Phase G currency debt).
 
 ### Phase E — HITL worklist + correction-capture flywheel + provenance drawer
 **Goal:** close the loop; corrections become data.
