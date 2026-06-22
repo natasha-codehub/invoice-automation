@@ -11,11 +11,27 @@
 
 | | |
 |---|---|
-| **Current phase** | Phase D ✓ (browser-verified) → next is **Phase E** (HITL flywheel + provenance drawer) |
-| **Last worked** | 2026-06-22 (Phase D: statement segmentation 1 file → N invoices w/ source-page provenance, intake summary strip, segmentation-aware ingest stage) |
-| **Next action** | Phase E · E1 — keyboard-first reviewer UI with suggested-fix pre-fill; see §5 Phase E |
+| **Current phase** | Phase D ✓ + **UI redesign ✓** (browser-verified) → next is **Phase E** (HITL flywheel + provenance drawer) |
+| **Last worked** | 2026-06-22 (UI redesign: single-page Document Queue, hybrid identity, KPI cards, calm table, slide-over review page, Add-documents menu, Eval slide-over) |
+| **Next action** | Phase E · E1 — keyboard-first reviewer UI with suggested-fix pre-fill, **built inside the new `ReviewSheet`**; see §5 Phase E |
 | **Dev server** | `npm run dev` → http://localhost:5173 |
 | **Verify a change** | run app in browser (system Chrome via playwright-core), screenshot the surface — never "tests pass" |
+
+> **UI redesign (2026-06-22, between Phase D and E)** — reskinned + restructured the
+> whole shell to a calmer "document queue" operator UX (Rosetta-inspired, kept the
+> indigo/Plex-Mono identity). Tokens live in `index.html` (body is now `--sans`,
+> mono reserved for headings/data). **Single page, no tabs.** New/changed components:
+> `KpiCards.jsx` (4 calm cards), `BatchFunnel.jsx` (now the collapsible "Pipeline view"
+> funnel only), `Worklist.jsx` (calm Document·Type·Status-pill·Conf·Amount table, still
+> virtualized), `ReviewSheet.jsx` (full-height slide-over with indigo action bar +
+> Reject-with-reason modal, wraps the existing Stepper/Inspector/MappingPanel/DetailPanel).
+> `App.jsx`: lifecycle filter tabs + funnel filter; **Add documents** popover = upload
+> (primary) + Run demo; the Sharpgas statement is **seeded into the batch by default**
+> (Type = Statement) instead of a button; the engine selector / Native / `/input` ingest
+> buttons were **removed from the UI** (bundled invoices are just part of the batch now);
+> Eval dashboard moved behind a top-bar button as a slide-over. `engine` is hard-fixed to
+> `'demo'`. Known follow-ups: optional Type filter (All/Content/Statement); decide whether
+> the pluggable-engine seam story needs any UI back.
 
 **Resume ritual:** `git log --oneline -10` → read this §0 → open the current phase →
 find the first unchecked `[ ]` → re-read that phase's *Done when*.

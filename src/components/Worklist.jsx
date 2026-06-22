@@ -1,12 +1,48 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { STATUS_META, STAGE_LABELS } from '../pipeline/model.js';
 
-const ROW_H = 64;
+/**
+ * Worklist — the Document Queue table (UI redesign).
+ *
+ * A calm, aligned table replaces the old free-form rows: Document (vendor ·
+ * invoice + source subline + segment badge) · Type · Status pill · Confidence ·
+ * Amount. Still hand-virtualized (ResizeObserver windowing) so it holds 1,000+
+ * rows. Clicking a row opens the slide-over review sheet.
+ */
+
+const ROW_H = 60;
 const OVERSCAN = 6;
+const GRID = 'minmax(0,3.1fr) minmax(0,1.15fr) minmax(0,1.1fr) minmax(0,.7fr) minmax(0,.95fr)';
+
+// Calm status pills keyed to the overall status grammar.
+const PILL = {
+  passed:        { label: 'Passed',        c: 'var(--green)', bg: 'var(--green-bg)', dot: '#10b981' },
+  auto_resolved: { label: 'Auto-resolved', c: 'var(--cyan)',  bg: 'var(--cyan-bg)',  dot: '#06b6d4' },
+  needs_review:  { label: 'Needs review',  c: 'var(--amber)', bg: 'var(--amber-bg)', dot: '#f59e0b' },
+  failed:        { label: 'Failed',        c: 'var(--red)',   bg: 'var(--red-bg)',   dot: '#ef4444' },
+  pending:       { label: 'In flight',     c: 'var(--muted)', bg: 'var(--surface2)', dot: '#94a3b8' },
+};
 
 function confColor(c) {
-  if (c == null) return '#94a3b8';
-  return c >= 0.8 ? '#059669' : c >= 0.6 ? '#d97706' : '#dc2626';
+  if (c == null) return 'var(--faint)';
+  return c >= 0.85 ? 'var(--green)' : c >= 0.6 ? 'var(--amber)' : 'var(--red)';
+}
+
+function docType(inv) {
+  return inv.provenance?.kind === 'statement-segment' ? 'Statement' : 'Content Invoice';
+}
+
+function StatusPill({ status }) {
+  const m = PILL[status] || PILL.pending;
+  return (
+    <span style={{
+      fontSize: 11.5, fontWeight: 600, padding: '3px 9px', borderRadius: 11,
+      background: m.bg, color: m.c, display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: m.dot }} />
+      {m.label}
+    </span>
+  );
 }
 
 const SORTS = {
@@ -14,18 +50,6 @@ const SORTS = {
   conf:   { label: 'Confidence', fn: (a, b) => (a.confidence ?? 1) - (b.confidence ?? 1) },
   vendor: { label: 'Vendor', fn: (a, b) => a.vendorName.localeCompare(b.vendorName) },
 };
-
-function StatusChip({ status }) {
-  const m = STATUS_META[status];
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 800, letterSpacing: '0.03em',
-      padding: '2px 7px', borderRadius: 4, background: m.bg, color: m.color, whiteSpace: 'nowrap',
-    }}>
-      {m.icon} {m.label.toUpperCase()}
-    </span>
-  );
-}
 
 export default function Worklist({ invoices, totalCount, selectedId, onSelect, filter, onClearFilter }) {
   const [sortKey, setSortKey] = useState('risk');
@@ -50,32 +74,35 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
   const visible = sorted.slice(start, end);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', borderRight: '2px solid var(--border)', minWidth: 360, width: 420 }}>
-      {/* Header */}
-      <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', background: '#f8fafc', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>Worklist</span>
-          <span style={{ fontSize: 12, color: '#64748b' }}>
-            {sorted.length.toLocaleString()}{totalCount ? ` of ${totalCount.toLocaleString()}` : ''}
-          </span>
-          <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>sort</span>
-          {Object.entries(SORTS).map(([k, s]) => (
-            <button key={k} onClick={() => setSortKey(k)} className={`wl-sort${sortKey === k ? ' wl-sort-active' : ''}`}>
-              {s.label}
-            </button>
-          ))}
-        </div>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Toolbar: count · active funnel filter · sort */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--border)', background: '#fafbfd', flexShrink: 0, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+          Showing <b style={{ fontFamily: 'var(--mono)', color: 'var(--text)' }}>{sorted.length.toLocaleString()}</b>
+          {totalCount ? ` of ${totalCount.toLocaleString()}` : ''}
+        </span>
         {filter && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, background: '#ede9fe', color: '#6d28d9', fontWeight: 600 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ fontSize: 11.5, padding: '2px 8px', borderRadius: 6, background: 'var(--accent-soft)', color: 'var(--accent-deep)', fontWeight: 600 }}>
               {STAGE_LABELS[filter.stage]} · {STATUS_META[filter.status].label}
             </span>
-            <button onClick={onClearFilter} style={{ fontSize: 11, color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-              clear ✕
-            </button>
-          </div>
+            <button onClick={onClearFilter} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none' }}>clear ✕</button>
+          </span>
         )}
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 11, color: 'var(--faint)' }}>sort</span>
+        {Object.entries(SORTS).map(([k, s]) => (
+          <button key={k} onClick={() => setSortKey(k)} className={`wl-sort${sortKey === k ? ' wl-sort-active' : ''}`}>{s.label}</button>
+        ))}
+      </div>
+
+      {/* Column header */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', padding: '9px 16px',
+        background: '#fafbfd', borderBottom: '1px solid var(--border)', flexShrink: 0,
+        fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)', fontWeight: 600,
+      }}>
+        <span>Document</span><span>Type</span><span>Status</span><span>Conf</span><span style={{ textAlign: 'right' }}>Amount</span>
       </div>
 
       {/* Virtualized rows */}
@@ -85,49 +112,66 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
             const idx = start + i;
             const isSel = inv.id === selectedId;
             const isLive = String(inv.id).startsWith('INV-LIVE-');
-            const subline = inv.sourceFile || inv.scenario || `stopped at ${STAGE_LABELS[inv.stoppedAt]}`;
+            const invNo = inv.extraction?.invoiceNumber;
+            const prov = inv.provenance;
+            const src = inv.sourceFile || inv.scenario || `stopped at ${STAGE_LABELS[inv.stoppedAt]}`;
             return (
               <button
                 key={inv.id}
                 onClick={() => onSelect(inv.id)}
                 style={{
                   position: 'absolute', top: idx * ROW_H, left: 0, right: 0, height: ROW_H,
-                  display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4,
-                  padding: '0 14px', textAlign: 'left',
-                  background: isSel ? '#ede9fe' : (isLive ? '#faf8ff' : 'transparent'),
-                  borderLeft: `3px solid ${isSel ? '#7c3aed' : 'transparent'}`,
-                  borderBottom: '1px solid #eef2f7', borderTop: 'none', borderRight: 'none',
-                  cursor: 'pointer',
+                  display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', gap: 8,
+                  padding: '0 16px', textAlign: 'left',
+                  background: isSel ? 'var(--accent-soft)' : (isLive ? '#faf8ff' : 'transparent'),
+                  borderLeft: `3px solid ${isSel ? 'var(--accent)' : 'transparent'}`,
+                  borderBottom: '1px solid #f1f2f7', borderTop: 'none', borderRight: 'none',
                 }}
+                className="wl-row"
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                {/* Document */}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                     {isLive && (
-                      <span title="Just ingested" style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, letterSpacing: '0.04em', color: '#7c3aed', background: '#ede9fe', borderRadius: 4, padding: '1px 5px' }}>
-                        NEW
+                      <span title="Just ingested" style={{ flexShrink: 0, fontSize: 9, fontWeight: 700, letterSpacing: '0.04em', color: 'var(--accent)', background: 'var(--accent-soft)', borderRadius: 5, padding: '1px 5px' }}>NEW</span>
+                    )}
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--accent-deep)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {inv.vendorName}{invNo ? <span style={{ color: 'var(--text)', fontWeight: 400 }}> · {invNo}</span> : ''}
+                    </span>
+                    {prov?.kind === 'statement-segment' && (
+                      <span style={{ flexShrink: 0, fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--accent)', background: 'var(--accent-soft)', borderRadius: 5, padding: '0 6px' }}>
+                        {prov.segmentIndex} of {prov.segmentCount}
                       </span>
                     )}
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {inv.vendorName}
-                    </span>
-                  </span>
-                  <StatusChip status={inv.overallStatus} />
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                    src: {src}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-                    {subline}
+
+                {/* Type */}
+                <span>
+                  <span style={{
+                    fontFamily: 'var(--mono)', fontSize: 10.5, padding: '2px 8px', borderRadius: 5, fontWeight: 500, whiteSpace: 'nowrap',
+                    background: docType(inv) === 'Statement' ? '#efeafd' : '#e8eefe',
+                    color: docType(inv) === 'Statement' ? '#6d28d9' : '#2a3bb5',
+                  }}>
+                    {docType(inv)}
                   </span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                    {inv.confidence != null && (
-                      <span style={{ fontSize: 11, fontWeight: 700, color: confColor(inv.confidence) }}>
-                        {Math.round(inv.confidence * 100)}%
-                      </span>
-                    )}
-                    <span style={{ fontSize: 12, color: inv.valueAtRisk > 0 ? '#dc2626' : '#64748b', fontWeight: 600 }}>
-                      {inv.total != null ? `₹${inv.total.toLocaleString()}` : '—'}
-                    </span>
-                  </span>
-                </div>
+                </span>
+
+                {/* Status */}
+                <span><StatusPill status={inv.overallStatus} /></span>
+
+                {/* Confidence */}
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600, color: confColor(inv.confidence) }}>
+                  {inv.confidence != null ? `${Math.round(inv.confidence * 100)}%` : '—'}
+                </span>
+
+                {/* Amount */}
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 12.5, textAlign: 'right', fontWeight: 600, color: inv.valueAtRisk > 0 ? 'var(--red)' : 'var(--text-dim)' }}>
+                  {inv.total != null ? `₹${inv.total.toLocaleString()}` : '—'}
+                </span>
               </button>
             );
           })}
@@ -135,10 +179,11 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
       </div>
 
       <style>{`
-        .wl-sort { font-size: 11px; padding: 3px 8px; border: 1px solid #e2e8f0; border-radius: 5px;
-          background: #fff; color: #64748b; cursor: pointer; font-family: 'IBM Plex Mono', monospace; }
-        .wl-sort:hover { border-color: #a5b4fc; color: #4f46e5; }
-        .wl-sort-active { background: #4f46e5; border-color: #4f46e5; color: #fff; font-weight: 700; }
+        .wl-row:hover { background: #f6f7ff !important; }
+        .wl-sort { font-size: 11px; padding: 3px 9px; border: 1px solid var(--border2); border-radius: 6px;
+          background: #fff; color: var(--muted); font-family: var(--mono); }
+        .wl-sort:hover { border-color: var(--accent); color: var(--accent); }
+        .wl-sort-active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
       `}</style>
     </div>
   );
