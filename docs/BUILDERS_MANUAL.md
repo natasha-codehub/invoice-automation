@@ -13,7 +13,7 @@
 |---|---|
 | **Current phase** | Phase D ✓ + **UI redesign ✓** (browser-verified) → next is **Phase E** (HITL flywheel + provenance drawer) |
 | **Last worked** | 2026-06-22 (UI redesign: single-page Document Queue, hybrid identity, KPI cards, calm table, slide-over review page, Add-documents menu, Eval slide-over) |
-| **Next action** | Phase E · E1 — keyboard-first reviewer UI with suggested-fix pre-fill, **built inside the new `ReviewSheet`**; see §5 Phase E |
+| **Next action** | **Resume on the world-class gap analysis — see new §9.** Top candidates: (1) real extraction + bounding-box click-to-source, (2) the learning flywheel = Phase E built inside `ReviewSheet`, (3) one real ERP post, (4) a backend. Decide focus with Natasha before building. |
 | **Dev server** | `npm run dev` → http://localhost:5173 |
 | **Verify a change** | run app in browser (system Chrome via playwright-core), screenshot the surface — never "tests pass" |
 
@@ -286,3 +286,27 @@ Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.
 - Every stage transition writes a TraceEntry. No silent mutations.
 - Verify by **running the app in a browser**, screenshot the surface. Build/lint are necessary, not sufficient.
 - Commit per phase with a verifiable *Done when*. Branch off `master`.
+
+## 9. Gap to world-class (roadmap beyond G) — discussion captured 2026-06-22
+
+> Honest gap analysis vs the products we actually compete with (Rossum, Vic.ai,
+> Stampli, Tipalti, Bill.com, AvidXchange, Ottimate, Coupa, SAP Concur, Basware).
+> **Framing:** this prototype sells the *vision of the intelligence layer* well, but
+> it's a demo of the *thinking*, not a running system. Gaps cluster in four places:
+> (1) real ML at scale, (2) the data/integration plane, (3) the enterprise/trust
+> substrate, (4) breadth of the AP lifecycle.
+
+**The gaps**
+1. **Extraction is baked, not running.** Demo engine returns pre-authored JSON; confidence is hand-written; the pluggable Layer-1 seam is a concept (Native pulled from UI). No per-token bounding boxes → **no click-field-to-source highlight** (the #1 reviewer trust feature). Hard to *prove* the "OCR commoditized, normalization is the moat" thesis without real extraction output flowing through.
+2. **No data plane / ERP integration — and "routing to ERP" is the product's name.** Master data (`vendorMaster.js`, `openPOs`, `erpCatalog.js`, `goodsReceipts.js`) is static fixtures; world-class bidirectionally *syncs* it from NetSuite/SAP/Dynamics/QuickBooks. "Approve & Post to ERP" is a no-op; the Route stage does nothing. No connectors/API/webhooks/e-invoicing networks (PEPPOL, India IRN, KSA ZATCA, LATAM CFDI). This is the hardest, most defensible part and it's absent.
+3. **Intelligence layer is shallow where depth is the moat.** Validation = 7 fixed rules + one tolerance dial (vs configurable no-code rules + approval matrices/SLAs/delegation). Duplicate detection is a boolean flag (vs fuzzy near-dup across the corpus + fraud/anomaly: bank-change detection, BEC, dup-payment prevention). Mapping is the best piece but runs against a 16-item invented catalog + one mock GR (vs millions of SKUs, multi-line/multi-PO, UOM conversion, freight/tax allocation, history-learned GL coding). **The learning flywheel doesn't exist yet — corrections aren't persisted (Phase E); a correction dies on reload.** That flywheel is the stated moat.
+4. **No enterprise substrate.** Client-only React, one in-memory synthetic batch; no backend/persistence/auth/multi-tenancy. `TraceEntry` is the right idea but in-memory (vs immutable/queryable/retained + SOC2/SOX/RBAC/residency). Scale is simulated (virtualized mock rows, not throughput).
+5. **Capture→route only, not the full AP lifecycle.** No payments (ACH/wire/vcard/FX), dynamic discounting, supplier onboarding/KYC/W-9, accruals/cash-flow, 1099s, spend analytics. Legitimate scope choice, but a fraction of what the suites sell.
+
+**What it already gets right (don't lose):** one status grammar across 4 stages × 3 zoom levels; confidence-on-critical-fields routing + arithmetic consistency gate (catches confident-but-wrong); mapping-as-the-moat framing; STP-vs-leakage guardrail thinking; auditable per-field trace; segmentation (1 file ≠ 1 invoice).
+
+**Priority order to close the gap (next-session candidates):**
+1. **Make extraction real with spatial grounding** — ≥1 real engine + bounding-box overlay + click-to-field. Without it, trust + eval are theater.
+2. **Build the learning flywheel for real (= Phase E)** — persist corrections, feed them into alias/vendor maps, *show touch-rate dropping*. The differentiation; make it measurable.
+3. **One real ERP integration** (NetSuite or QuickBooks) — turn Route + "Approve & Post" into actual master-data sync + posting. Proves the namesake.
+4. **A backend with persistence + audit + auth** — the substrate that makes the above demonstrable beyond a single session.
