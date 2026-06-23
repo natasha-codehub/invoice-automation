@@ -6,6 +6,7 @@ import { SHARPGAS_STATEMENT } from './data/statements.js';
 import { segmentDocument } from './pipeline/segmentation.js';
 import { bundledInvoices, generateSynthetic } from './pipeline/generateBatch.js';
 import { runPipeline } from './pipeline/runPipeline.js';
+import { TOUCHLESS } from './pipeline/model.js';
 import { aggregateBatch } from './pipeline/aggregateBatch.js';
 import { subscribe as subscribeLearning, learnAlias, logDecision, counts as learningCounts, reset as resetLearning } from './data/correctionsStore.js';
 import EvalDashboard from './components/EvalDashboard.jsx';
@@ -106,6 +107,45 @@ export default function App() {
     () => displayInvoices.filter(inv => inv.routed).map(inv => inv.routed),
     [displayInvoices],
   );
+
+  // Flywheel impact (Phase F-lite): the counterfactual that makes the moat
+  // *measurable*. Re-pipe the real + ingested invoices with learned aliases turned
+  // OFF (the pre-flywheel baseline) and diff against the live `piped`: how many
+  // mapping exceptions the learned aliases removed, the lines they auto-resolved,
+  // and the touch-rate before vs now. Only the real/ingested set carries mappings,
+  // so the synthetic fill is irrelevant here and we skip it.
+  const flywheel = useMemo(() => {
+    const empty = { aliases: 0, linesResolved: 0, vendors: 0, exceptionsRemoved: 0, rescued: 0, touchBasePct: null, touchNowPct: null, resolvedLines: [] };
+    if (!learning.aliases) return empty;
+    const base = [...liveRaw, ...realRaw].map(inv => runPipeline(inv, tolerance, BATCH_ID, { ignoreLearned: true }));
+    const baseById = Object.fromEntries(base.map(b => [b.id, b]));
+    const touchless = (s) => TOUCHLESS.has(s);
+    const mappingExceptions = (pinv) =>
+      (pinv.mapping?.lines || []).filter(l => l.matchType === 'unmatched').length
+      + (pinv.mapping && pinv.mapping.minConfidence != null && pinv.mapping.minConfidence < 0.6 ? 1 : 0);
+
+    let linesResolved = 0, exceptionsRemoved = 0, rescued = 0, touchBaseN = 0, touchNowN = 0;
+    const resolvedLines = [];
+    for (const now of piped) {
+      const b = baseById[now.id];
+      if (!b) continue;
+      if (touchless(b.overallStatus)) touchBaseN += 1;
+      if (touchless(now.overallStatus)) touchNowN += 1;
+      if (!touchless(b.overallStatus) && touchless(now.overallStatus)) rescued += 1;
+      exceptionsRemoved += Math.max(0, mappingExceptions(b) - mappingExceptions(now));
+      for (const l of (now.mapping?.lines || [])) {
+        if (l.learned) { linesResolved += 1; resolvedLines.push({ id: now.id, vendor: now.vendorName, raw: l.rawDesc, mat: l.matchedMaterialId, name: l.materialName }); }
+      }
+    }
+    const denom = piped.length || 1;
+    return {
+      aliases: learning.aliases, linesResolved, exceptionsRemoved, rescued,
+      vendors: new Set(resolvedLines.map(r => r.vendor)).size,
+      touchBasePct: Math.round((touchBaseN / denom) * 100),
+      touchNowPct: Math.round((touchNowN / denom) * 100),
+      realCount: piped.length, resolvedLines,
+    };
+  }, [piped, liveRaw, realRaw, tolerance, learning.aliases]);
 
   // Re-pipe an invoice after a human edit / accept / re-extract, keeping human + engine traces.
   const repipeWith = useCallback((cur, ext, trace, accept = false) => {
@@ -483,7 +523,7 @@ export default function App() {
               <button onClick={() => setEvalOpen(false)} aria-label="Close" style={{ background: 'none', border: 'none', color: '#fff', fontSize: 22, lineHeight: 1, padding: '2px 7px' }}>×</button>
             </div>
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              <EvalDashboard results={results} />
+              <EvalDashboard results={results} flywheel={flywheel} />
             </div>
           </aside>
         </>

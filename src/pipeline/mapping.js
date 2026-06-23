@@ -84,11 +84,13 @@ function fuzzy(desc) {
 // aliases layered on top — so a line a reviewer resolved once (Phase E flywheel)
 // now resolves itself for every matching line, and we can tell the operator which
 // matches were *learned* (vs seeded) to make the moat visible.
-function mapLine(line, vendor, idx) {
+function mapLine(line, vendor, idx, ignoreLearned = false) {
   const desc = line.desc || '';
   const parts = extractParts(desc);
   const seeded = VENDOR_PART_ALIASES[vendor] || {};
-  const learned = getLearnedAliases()[vendor] || {};
+  // ignoreLearned gives the pre-flywheel baseline — used to measure what the
+  // learned aliases changed (the "touch-rate dropping" counterfactual).
+  const learned = ignoreLearned ? {} : (getLearnedAliases()[vendor] || {});
   const aliases = { ...seeded, ...learned };
   const fullKey = desc.trim().toUpperCase();
   const aliasPart = parts.find((p) => aliases[p]) || null; // the token that resolves
@@ -153,8 +155,8 @@ function mapLine(line, vendor, idx) {
  * mapInvoice(invoice, vendor) → MappingResult (§3 contract, extended).
  * `vendor` is the canonical vendor name (pass routed.normalisedVendor).
  */
-export function mapInvoice(invoice, vendor) {
-  const lines = (invoice.lineItems || []).map((l, i) => mapLine(l, vendor, i));
+export function mapInvoice(invoice, vendor, opts = {}) {
+  const lines = (invoice.lineItems || []).map((l, i) => mapLine(l, vendor, i, opts.ignoreLearned));
 
   const unmatched = lines.filter((l) => l.matchType === 'unmatched');
   const matched = lines.filter((l) => l.matchedMaterialId);

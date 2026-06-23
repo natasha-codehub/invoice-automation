@@ -12,7 +12,7 @@
 | | |
 |---|---|
 | **Current phase** | **Phase E ✓** (HITL flywheel + provenance drawer, browser-verified) → next candidates are §9 priorities 1/3/4 (real extraction, one real ERP post, a backend) |
-| **Last worked** | 2026-06-23 (Phase E: localStorage corrections store, learned-alias merge into mapping, resolve-line UI + LEARNED badge, provenance drawer, decision logging, time-per-exception, header Learning chip) |
+| **Last worked** | 2026-06-23 (Phase E flywheel, then a **Flywheel Impact** panel in the Eval slide-over: counterfactual touch-rate baseline→now + exceptions removed + lines auto-resolved — the moat made *measurable*) |
 | **Next action** | **Decide the next §9 move with Natasha.** With the flywheel done, the standing priorities are: (1) real extraction + bounding-box click-to-source, (3) one real ERP post, (4) a backend. (2) the flywheel is now ✓. |
 | **Dev server** | `npm run dev` → http://localhost:5173 |
 | **Verify a change** | run app in browser (system Chrome via playwright-core), screenshot the surface — never "tests pass" |
@@ -255,6 +255,7 @@ Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.
 
 ### Phase F — Eval & guardrail metrics (the original "Phase 5")
 **Goal:** settle "OCR vs normalization" with data; guard STP.
+- [~] **F0 (done 2026-06-23). Flywheel Impact panel** — the counterfactual touch-rate (learned-aliases ON vs OFF) in the Eval slide-over. `EvalDashboard.FlywheelImpact` + `App.flywheel` + `mapInvoice(…, {ignoreLearned})`. The first measurable guardrail-adjacent metric; the rest of F builds out from here.
 - [ ] F1. Extraction-accuracy eval per engine vs `groundTruth` (field accuracy, confidence calibration).
 - [ ] F2. Guardrail board: STP ↑ vs $-leakage / exception-escape / false-reject.
 - [ ] F3. Random-QA sampling of auto-approved; new-vendor shadow mode flag.
@@ -309,6 +310,6 @@ Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.
 
 **Priority order to close the gap (next-session candidates):**
 1. **Make extraction real with spatial grounding** — ≥1 real engine + bounding-box overlay + click-to-field. Without it, trust + eval are theater.
-2. ~~**Build the learning flywheel for real (= Phase E)**~~ ✓ **DONE 2026-06-23.** Corrections persist (localStorage), feed the vendor alias map, the batch re-maps live, learned matches are badged, and the trace shows the human edit. Still TODO to fully "show touch-rate dropping": a before/after STP metric in the Eval dashboard tied to learned aliases (Phase F territory).
+2. ~~**Build the learning flywheel for real (= Phase E)**~~ ✓ **DONE 2026-06-23**, incl. the "show touch-rate dropping" piece: a **Flywheel Impact** panel in the Eval slide-over re-pipes the real+ingested set with learned aliases OFF (counterfactual baseline) and diffs — aliases learned, lines auto-resolved, mapping exceptions removed, touchless rate baseline→now, invoices rescued. Honest: shows "unchanged" when another check (variance) still holds the invoice. Built on `mapInvoice(…, {ignoreLearned})` + `App.flywheel`.
 3. **One real ERP integration** (NetSuite or QuickBooks) — turn Route + "Approve & Post" into actual master-data sync + posting. Proves the namesake.
 4. **A backend with persistence + audit + auth** — the substrate that makes the above demonstrable beyond a single session (and the upgrade path for the localStorage corrections store).
