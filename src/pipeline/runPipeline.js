@@ -152,7 +152,9 @@ export function runPipeline(invoice, tolerance = 2, batchId = 'batch', opts = {}
     })),
     ...(mapping?.lines || []).map(l => ({
       ...l.trace,
-      message: `Mapped "${l.rawDesc}" → ${l.matchedMaterialId || 'UNMATCHED'} (${l.matchType}, ${Math.round(l.confidence * 100)}%)`,
+      message: l.learned
+        ? `Mapped "${l.rawDesc}" → ${l.matchedMaterialId} via learned alias${l.learnedReason ? ` — "${l.learnedReason}"` : ''} (${Math.round(l.confidence * 100)}%)`
+        : `Mapped "${l.rawDesc}" → ${l.matchedMaterialId || 'UNMATCHED'} (${l.matchType}, ${Math.round(l.confidence * 100)}%)`,
     })),
   ];
 

@@ -7,6 +7,7 @@ import { segmentDocument } from './pipeline/segmentation.js';
 import { bundledInvoices, generateSynthetic } from './pipeline/generateBatch.js';
 import { runPipeline } from './pipeline/runPipeline.js';
 import { aggregateBatch } from './pipeline/aggregateBatch.js';
+import { subscribe as subscribeLearning, learnAlias, logDecision, counts as learningCounts, reset as resetLearning } from './data/correctionsStore.js';
 import EvalDashboard from './components/EvalDashboard.jsx';
 import KpiCards from './components/KpiCards.jsx';
 import BatchFunnel from './components/BatchFunnel.jsx';
@@ -38,6 +39,13 @@ export default function App() {
   const [selectedPipelineId, setSelectedPipelineId] = useState(null);
   const [activeStage, setActiveStage] = useState(null);
 
+  // The learning flywheel (Phase E): a version that bumps whenever the
+  // corrections store changes, so the whole batch re-maps against newly-taught
+  // aliases — resolve one unmatched line and every matching line auto-resolves.
+  const [learnVersion, setLearnVersion] = useState(0);
+  useEffect(() => subscribeLearning(() => setLearnVersion(v => v + 1)), []);
+  const learning = useMemo(() => learningCounts(), [learnVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Tolerance is a global re-run: drop per-invoice edits so they don't apply
   // against a stale pipe (they're cheap to redo).
   useEffect(() => { setPatched({}); }, [tolerance]);
@@ -61,7 +69,9 @@ export default function App() {
   const synthetic = useMemo(() => generateSynthetic(SYNTH_COUNT, BATCH_ID), []);
   const piped = useMemo(
     () => [...liveRaw, ...realRaw].map(inv => runPipeline(inv, tolerance, BATCH_ID)),
-    [liveRaw, realRaw, tolerance],
+    // learnVersion is intentional: re-map the batch when an alias is taught
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [liveRaw, realRaw, tolerance, learnVersion],
   );
 
   const displayInvoices = useMemo(
@@ -150,10 +160,33 @@ export default function App() {
 
   const closeSheet = useCallback(() => { setSelectedPipelineId(null); setActiveStage(null); }, []);
 
-  // Demo terminal actions — both close the sheet; the correction-capture store
-  // is Phase E, so for now Approve/Reject just clear the selection.
-  const onApprove = useCallback(() => closeSheet(), [closeSheet]);
-  const onReject = useCallback(() => closeSheet(), [closeSheet]);
+  // Phase E flywheel: a reviewer resolves an unmatched (or wrong) line to a
+  // canonical material. We (1) teach the vendor alias — keyed exactly as the
+  // matcher looks it up: a vendor part#, else the upper-cased description — which
+  // bumps learnVersion and re-maps the whole batch, and (2) re-pipe the current
+  // invoice so its own line flips immediately, carrying the human trace.
+  const onResolveLine = useCallback(({ line, materialId, reason }) => {
+    const cur = selectedPinv;
+    if (!cur?.extraction) return;
+    const vendor = cur.routed?.normalisedVendor || cur.vendorName;
+    const token = line.vendorPartNo || String(line.rawDesc || '').trim().toUpperCase();
+    learnAlias({ vendor, token, materialId, fromDesc: line.rawDesc, invoiceId: cur.id, reason });
+    repipeWith(cur, { ...cur.extraction }, {
+      field: 'mapping', actor: 'human:natasha', to: materialId,
+      message: `Resolved "${line.rawDesc}" → ${materialId}${reason ? ` — ${reason}` : ''}`, reversible: true,
+    });
+  }, [selectedPinv, repipeWith]);
+
+  // Terminal actions — now logged to the decisions store (E2). secondsInReview is
+  // the time-per-exception metric, measured by the sheet.
+  const onApprove = useCallback((pinv, secondsInReview) => {
+    logDecision({ invoiceId: pinv?.id, vendor: pinv?.routed?.normalisedVendor || pinv?.vendorName, decision: 'approve', secondsInReview });
+    closeSheet();
+  }, [closeSheet]);
+  const onReject = useCallback((pinv, reason, secondsInReview) => {
+    logDecision({ invoiceId: pinv?.id, vendor: pinv?.routed?.normalisedVendor || pinv?.vendorName, decision: 'reject', reason, secondsInReview });
+    closeSheet();
+  }, [closeSheet]);
 
   // Lifecycle tab + funnel segment are mutually exclusive filters.
   const onLifecycle = useCallback((status) => {
@@ -293,6 +326,22 @@ export default function App() {
         </div>
         <span style={{ color: 'rgba(255,255,255,0.85)', fontFamily: 'var(--mono)', fontSize: 12.5 }}>Batch Pipeline</span>
         <div style={{ flex: 1 }} />
+        {/* Learning flywheel readout — grows as reviewers teach the matcher */}
+        <div title="Aliases the matcher has learned from reviewer corrections (persisted across reloads)" style={{
+          display: 'flex', alignItems: 'center', gap: 8, marginRight: 14, color: '#fff',
+          fontFamily: 'var(--mono)', fontSize: 11.5, background: 'rgba(255,255,255,0.12)',
+          border: '1px solid rgba(255,255,255,0.28)', borderRadius: 7, padding: '5px 10px',
+        }}>
+          <span>🧠 {learning.aliases} learned</span>
+          <span style={{ opacity: 0.55 }}>·</span>
+          <span style={{ opacity: 0.85 }}>{learning.corrections} corrections</span>
+          {(learning.aliases > 0 || learning.corrections > 0) && (
+            <button onClick={resetLearning} title="Reset learned state (demo)"
+              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: 11, padding: '0 2px', cursor: 'pointer', textDecoration: 'underline' }}>
+              reset
+            </button>
+          )}
+        </div>
         <button className="topbar-btn" onClick={() => setEvalOpen(true)} style={{ marginRight: 14 }}>📊 Eval &amp; STP trend</button>
         <span style={{
           width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.18)', border: '1.5px solid rgba(255,255,255,0.4)',
@@ -412,6 +461,7 @@ export default function App() {
               onEditField={onEditField}
               onReextract={onReextract}
               onAccept={onAcceptExtract}
+              onResolveLine={onResolveLine}
               onApprove={onApprove}
               onReject={onReject}
               onClose={closeSheet}

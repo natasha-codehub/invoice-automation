@@ -11,9 +11,9 @@
 
 | | |
 |---|---|
-| **Current phase** | Phase D ✓ + **UI redesign ✓** (browser-verified) → next is **Phase E** (HITL flywheel + provenance drawer) |
-| **Last worked** | 2026-06-22 (UI redesign: single-page Document Queue, hybrid identity, KPI cards, calm table, slide-over review page, Add-documents menu, Eval slide-over) |
-| **Next action** | **Resume on the world-class gap analysis — see new §9.** Top candidates: (1) real extraction + bounding-box click-to-source, (2) the learning flywheel = Phase E built inside `ReviewSheet`, (3) one real ERP post, (4) a backend. Decide focus with Natasha before building. |
+| **Current phase** | **Phase E ✓** (HITL flywheel + provenance drawer, browser-verified) → next candidates are §9 priorities 1/3/4 (real extraction, one real ERP post, a backend) |
+| **Last worked** | 2026-06-23 (Phase E: localStorage corrections store, learned-alias merge into mapping, resolve-line UI + LEARNED badge, provenance drawer, decision logging, time-per-exception, header Learning chip) |
+| **Next action** | **Decide the next §9 move with Natasha.** With the flywheel done, the standing priorities are: (1) real extraction + bounding-box click-to-source, (3) one real ERP post, (4) a backend. (2) the flywheel is now ✓. |
 | **Dev server** | `npm run dev` → http://localhost:5173 |
 | **Verify a change** | run app in browser (system Chrome via playwright-core), screenshot the surface — never "tests pass" |
 
@@ -242,14 +242,16 @@ Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.
 
 > **Known shallow edges (revisit later):** segmentation is the interactive ingest path (one bundled statement), not auto-applied to the synthetic fill — the intake strip reflects it live once ingested. Sharpgas POs (`PO-SG-0118/0210/0315`) were added to `vendorMaster.openPOs` so seg1 can reconcile and reach STP. Statement currency is INR so the GST-18% check fires (display still ₹, consistent with the Phase G currency debt).
 
-### Phase E — HITL worklist + correction-capture flywheel + provenance drawer
+### Phase E — HITL worklist + correction-capture flywheel + provenance drawer ✓ (2026-06-23, browser-verified)
 **Goal:** close the loop; corrections become data.
-- [ ] E1. Reviewer UI: keyboard-first, source+fields, **suggested fix pre-filled**; time-per-exception metric.
-- [ ] E2. **Capture every correction** (original→corrected, actor, reason) to a `corrections` store.
-- [ ] E3. Feed corrections back into vendor alias map + ERP alias map (show the map growing).
-- [ ] E4. **Provenance drawer**: full per-field lineage (raw→normalized→enriched→mapped, each actor/conf/rule/time, reversible).
+- [x] E1. Reviewer UI: keyboard-first (A approve · R reject · P provenance), source+fields, **suggested fix pre-filled** (resolver defaults to the model's suggestedFix); time-per-exception metric (⏱ in the action bar, logged to decisions).
+- [x] E2. **Capture every correction** (original→corrected, actor, reason) to a `corrections` store — `src/data/correctionsStore.js`, **localStorage-backed** (survives reload). Also logs Approve/Reject decisions with reason + seconds-in-review.
+- [x] E3. Feed corrections back into the vendor alias map (`getLearnedAliases()` merged over seeded `VENDOR_PART_ALIASES` in `mapping.js`); the whole batch re-maps via a `learnVersion` bump, learned matches wear a **LEARNED** badge, and the MappingPanel lists the learned aliases per vendor (the map visibly growing). Header chip shows `🧠 N learned · M corrections` + a demo reset.
+- [x] E4. **Provenance drawer** (`ProvenanceDrawer.jsx`): full per-field lineage (segmentation→normalization→mapping + human edits), each with actor badge / conf / rule / time / reversible. Opened from the action bar (🧾 Trace / P).
 
-**Done when:** correcting a mapping in review adds a vendor-part alias so the *next* identical line auto-resolves; the drawer shows the full trace including the human edit.
+**Done when:** correcting a mapping in review adds a vendor-part alias so the *next* identical line auto-resolves; the drawer shows the full trace including the human edit. ✓ **Verified:** resolving Xpedited "Oxygen 20 gas" → MAT-O2-17 flips the line UNMATCHED→LEARNED (30%→96%, mapping 6/7→7/7), persists across reload, and the trace shows the learned-alias entry with the human's reason. (Invoice stays Needs-review for the *separate* 3.03% PO variance — correct.)
+
+> **Implementation notes:** decision logged in §6 — corrections store is **localStorage**, not in-memory, specifically to kill the §9 "a correction dies on reload" critique. `mapping.js` is no longer purely static — it reads the learned store and tags learned matches (`learned`, `learnedReason`, `learnedAt` on the line + trace). The token learned mirrors the matcher's lookup exactly: a vendor part#, else the upper-cased full description. `App.piped` gains `learnVersion` in its deps so a taught alias re-maps every invoice in the batch (resolve once → all matching lines auto-resolve).
 
 ### Phase F — Eval & guardrail metrics (the original "Phase 5")
 **Goal:** settle "OCR vs normalization" with data; guard STP.
@@ -271,7 +273,7 @@ Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.
 - [ ] PDF renderer: `pdf.js` (real, heavier) vs `<embed>`/`<iframe>` (simple, browser-native)?
 - [x] Mock "goods receipt" data source for three-way match (raised + resolved 2026-06-19): **separate file** `src/data/goodsReceipts.js`, keyed by *normalised* PO. Reason: a goods receipt is a different system of record (receiving) from the item master, and keeping it apart lets `threeWayMatch` reconcile ordered/received/invoiced without coupling to the catalog.
 - [ ] Worklist virtualization: hand-rolled windowing vs a tiny lib (keep zero-dep ethos?).
-- [ ] Where the corrections/alias store lives (in-memory vs localStorage for demo persistence).
+- [x] Where the corrections/alias store lives (raised earlier, resolved 2026-06-23): **localStorage** (`src/data/correctionsStore.js`, key `invoice-automation.learning.v1`). Reason: directly answers the §9 critique that "a correction dies on reload" and keeps the zero-dep, client-only ethos — the flywheel is provable without a backend. Write-through to an in-memory cache so `mapping.js` doesn't hit localStorage per line; a pub/sub `subscribe()` lets App bump `learnVersion` to re-map the batch. A backend store is the Phase-beyond-G upgrade (§9 #4).
 
 ## 7. Glossary
 - **STP** straight-through processing (zero human touch).
@@ -307,6 +309,6 @@ Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.
 
 **Priority order to close the gap (next-session candidates):**
 1. **Make extraction real with spatial grounding** — ≥1 real engine + bounding-box overlay + click-to-field. Without it, trust + eval are theater.
-2. **Build the learning flywheel for real (= Phase E)** — persist corrections, feed them into alias/vendor maps, *show touch-rate dropping*. The differentiation; make it measurable.
+2. ~~**Build the learning flywheel for real (= Phase E)**~~ ✓ **DONE 2026-06-23.** Corrections persist (localStorage), feed the vendor alias map, the batch re-maps live, learned matches are badged, and the trace shows the human edit. Still TODO to fully "show touch-rate dropping": a before/after STP metric in the Eval dashboard tied to learned aliases (Phase F territory).
 3. **One real ERP integration** (NetSuite or QuickBooks) — turn Route + "Approve & Post" into actual master-data sync + posting. Proves the namesake.
-4. **A backend with persistence + audit + auth** — the substrate that makes the above demonstrable beyond a single session.
+4. **A backend with persistence + audit + auth** — the substrate that makes the above demonstrable beyond a single session (and the upgrade path for the localStorage corrections store).

@@ -16,6 +16,7 @@
 
 import { MATERIALS, MAT_BY_ID, VENDOR_PART_ALIASES } from '../data/erpCatalog.js';
 import { getGoodsReceipt } from '../data/goodsReceipts.js';
+import { getLearnedAliases, getLearnedMeta } from '../data/correctionsStore.js';
 
 const CONF = { exact: 0.99, alias: 0.96, fuzzyFee: 0.82, fuzzyGas: 0.7, unmatched: 0.3 };
 
@@ -79,24 +80,31 @@ function fuzzy(desc) {
 }
 
 // Map a single line. vendor = canonical (post-normalisation) vendor name.
+// The alias map is the seeded VENDOR_PART_ALIASES with the human-taught learned
+// aliases layered on top — so a line a reviewer resolved once (Phase E flywheel)
+// now resolves itself for every matching line, and we can tell the operator which
+// matches were *learned* (vs seeded) to make the moat visible.
 function mapLine(line, vendor, idx) {
   const desc = line.desc || '';
   const parts = extractParts(desc);
-  const aliases = VENDOR_PART_ALIASES[vendor] || {};
+  const seeded = VENDOR_PART_ALIASES[vendor] || {};
+  const learned = getLearnedAliases()[vendor] || {};
+  const aliases = { ...seeded, ...learned };
+  const fullKey = desc.trim().toUpperCase();
   const aliasPart = parts.find((p) => aliases[p]) || null; // the token that resolves
   const part = aliasPart || parts[0] || null;              // shown as the vendor part#
 
-  let matchType, matchedMaterialId, confidence, suggestedFix = null;
+  let matchType, matchedMaterialId, confidence, suggestedFix = null, matchedKey = null;
 
   // 1. exact — a canonical MAT-* code printed on the line
   const matCode = desc.toUpperCase().match(/\bMAT-[A-Z0-9-]+\b/);
   if (matCode && MAT_BY_ID[matCode[0]]) {
     matchType = 'exact'; matchedMaterialId = matCode[0]; confidence = CONF.exact;
   } else if (aliasPart) {
-    matchType = 'alias'; matchedMaterialId = aliases[aliasPart]; confidence = CONF.alias;
-  } else if (aliases[desc.trim().toUpperCase()]) {
+    matchType = 'alias'; matchedMaterialId = aliases[aliasPart]; confidence = CONF.alias; matchedKey = aliasPart;
+  } else if (aliases[fullKey]) {
     // 2. alias by full description (vendors that print no part#, e.g. Xpedited)
-    matchType = 'alias'; matchedMaterialId = aliases[desc.trim().toUpperCase()]; confidence = CONF.alias;
+    matchType = 'alias'; matchedMaterialId = aliases[fullKey]; confidence = CONF.alias; matchedKey = fullKey;
   } else {
     // 3. fuzzy → possibly unmatched
     const f = fuzzy(desc);
@@ -104,15 +112,23 @@ function mapLine(line, vendor, idx) {
     else { matchType = 'unmatched'; matchedMaterialId = null; confidence = f.conf; suggestedFix = f.suggestedFix || null; }
   }
 
+  // Did this alias resolution come from a human-taught entry (not the seed)?
+  const learnedMeta = matchType === 'alias' && matchedKey && learned[matchedKey] && !seeded[matchedKey]
+    ? getLearnedMeta(vendor, matchedKey)
+    : null;
+
   const mat = matchedMaterialId ? MAT_BY_ID[matchedMaterialId] : null;
   const trace = {
     field: `line[${idx}]`,
     from: desc,
     to: matchedMaterialId || (suggestedFix ? `? (suggest ${suggestedFix})` : 'UNMATCHED'),
-    actor: `map:${matchType}`,
-    ruleId: matchType === 'alias' ? `alias:${vendor}` : null,
+    actor: learnedMeta ? (learnedMeta.actor || 'human:natasha') : `map:${matchType}`,
+    ruleId: learnedMeta ? `learned:${vendor}` : (matchType === 'alias' ? `alias:${vendor}` : null),
     confidence,
     reversible: true,
+    learned: !!learnedMeta,
+    learnedReason: learnedMeta?.reason || null,
+    learnedAt: learnedMeta?.ts || null,
   };
 
   return {
@@ -125,6 +141,8 @@ function mapLine(line, vendor, idx) {
     matchType,
     confidence,
     suggestedFix,
+    learned: !!learnedMeta,
+    learnedReason: learnedMeta?.reason || null,
     qty: line.qty ?? null,
     total: line.total ?? null,
     trace,

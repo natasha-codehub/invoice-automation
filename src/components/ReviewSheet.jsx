@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import InvoiceStepper from './InvoiceStepper.jsx';
 import ExtractionInspector from './ExtractionInspector.jsx';
 import MappingPanel from './MappingPanel.jsx';
 import DetailPanel from './DetailPanel.jsx';
+import ProvenanceDrawer from './ProvenanceDrawer.jsx';
 
 /**
  * ReviewSheet — the per-invoice review page as a full-height slide-over
@@ -16,25 +17,60 @@ import DetailPanel from './DetailPanel.jsx';
 
 export default function ReviewSheet({
   pinv, activeStage, onStageClick, busy,
-  onEditField, onReextract, onAccept, onApprove, onReject, onClose,
+  onEditField, onReextract, onAccept, onResolveLine, onApprove, onReject, onClose,
 }) {
   const open = !!pinv;
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reason, setReason] = useState('');
+  const [traceOpen, setTraceOpen] = useState(false);
 
-  // Esc closes the modal first, then the sheet.
+  // Time-per-exception (E1): clock starts when this invoice opens, freezes at the
+  // terminal action. Reported to the decisions store so the eval can chart it.
+  const openedAtRef = useRef(null);
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    openedAtRef.current = Date.now();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setElapsed(0);
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - openedAtRef.current) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [open, pinv?.id]);
+  const secs = () => (openedAtRef.current ? Math.round((Date.now() - openedAtRef.current) / 1000) : null);
+  const mmss = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
+
+  const approve = () => onApprove?.(pinv, secs());
+
+  // Esc closes the trace, then the modal, then the sheet.
   useEffect(() => {
     const h = (e) => {
       if (e.key !== 'Escape') return;
-      if (rejectOpen) setRejectOpen(false);
+      if (traceOpen) setTraceOpen(false);
+      else if (rejectOpen) setRejectOpen(false);
       else if (open) onClose();
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [open, rejectOpen, onClose]);
+  }, [open, rejectOpen, traceOpen, onClose]);
 
-  // Reset the reject form whenever the sheet target changes.
-  useEffect(() => { setRejectOpen(false); setReason(''); }, [pinv?.id]);
+  // Keyboard-first review (E1): A approve · R reject · P provenance. Ignored while
+  // typing or when a modal/drawer owns the keyboard.
+  useEffect(() => {
+    const h = (e) => {
+      if (!open || rejectOpen || traceOpen) return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      const k = e.key.toLowerCase();
+      if (k === 'a') { e.preventDefault(); approve(); }
+      else if (k === 'r') { e.preventDefault(); setRejectOpen(true); }
+      else if (k === 'p') { e.preventDefault(); setTraceOpen(true); }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [open, rejectOpen, traceOpen, pinv]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset the reject form / trace whenever the sheet target changes.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setRejectOpen(false); setReason(''); setTraceOpen(false); }, [pinv?.id]);
 
   const invNo = pinv?.extraction?.invoiceNumber || pinv?.id;
   const engine = pinv?.extraction?.extractionEngine;
@@ -42,7 +78,7 @@ export default function ReviewSheet({
   const confirmReject = () => {
     if (!reason.trim()) return;
     setRejectOpen(false);
-    onReject?.(pinv, reason.trim());
+    onReject?.(pinv, reason.trim(), secs());
     onClose();
   };
 
@@ -69,9 +105,11 @@ export default function ReviewSheet({
                 {engine && <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.62)', flexShrink: 0 }}>· {engine}</span>}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                <span title="Time in review (time-per-exception)" style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'var(--mono)', fontSize: 11.5 }}>⏱ {mmss}</span>
+                <button className="rs-ghost-w" onClick={() => setTraceOpen(true)} title="Provenance trace (P)">🧾 Trace</button>
                 {pinv.extraction && <button className="rs-ghost-w" onClick={onReextract} disabled={busy}>↻ Re-run</button>}
-                <button className="rs-ghost-w" onClick={() => setRejectOpen(true)}>Reject</button>
-                <button className="rs-approve" onClick={() => onApprove?.(pinv)}>↗ Approve &amp; Post to ERP</button>
+                <button className="rs-ghost-w" onClick={() => setRejectOpen(true)} title="Reject (R)">Reject</button>
+                <button className="rs-approve" onClick={approve} title="Approve (A)">↗ Approve &amp; Post to ERP</button>
                 <button className="rs-x" onClick={onClose} aria-label="Close review">×</button>
               </div>
             </div>
@@ -82,7 +120,7 @@ export default function ReviewSheet({
               {activeStage === 'extract' && pinv.extraction ? (
                 <ExtractionInspector pinv={pinv} busy={busy} onEditField={onEditField} onReextract={onReextract} onAccept={onAccept} />
               ) : activeStage === 'validate' && pinv.mapping ? (
-                <MappingPanel pinv={pinv} />
+                <MappingPanel pinv={pinv} onResolveLine={onResolveLine} />
               ) : pinv.routed ? (
                 <DetailPanel result={pinv.routed} />
               ) : (
@@ -95,10 +133,11 @@ export default function ReviewSheet({
             {/* Footer */}
             <div style={{ borderTop: '1px solid var(--border)', padding: '11px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', flexShrink: 0, background: 'var(--surface)' }}>
               <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+                <button className="rs-ghost" onClick={() => setTraceOpen(true)}>🧾 Provenance trace</button>
                 {pinv.extraction && <button className="rs-ghost" onClick={onReextract} disabled={busy}>↻ Re-run extraction</button>}
                 <button className="rs-ghost" onClick={onClose}>⇄ Back to queue</button>
               </div>
-              <button className="rs-approve-lg" onClick={() => onApprove?.(pinv)}>↗ Approve &amp; Post to ERP</button>
+              <button className="rs-approve-lg" onClick={approve}>↗ Approve &amp; Post to ERP</button>
             </div>
           </>
         )}
@@ -128,6 +167,9 @@ export default function ReviewSheet({
           </div>
         </div>
       )}
+
+      {/* Provenance trace drawer (E4) */}
+      <ProvenanceDrawer pinv={pinv} open={traceOpen} onClose={() => setTraceOpen(false)} />
 
       <style>{`
         .rs-ghost-w { border:1px solid rgba(255,255,255,0.4); border-radius:6px; background:rgba(255,255,255,0.12); color:#fff; padding:6px 12px; font-size:12px; }
