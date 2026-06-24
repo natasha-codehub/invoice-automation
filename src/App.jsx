@@ -7,7 +7,7 @@ import { bundledInvoices, sampleInvoicesWithSource, referenceDocs, generateSynth
 import { runPipeline } from './pipeline/runPipeline.js';
 import { TOUCHLESS, mkStage, STATUS } from './pipeline/model.js';
 import { aggregateBatch } from './pipeline/aggregateBatch.js';
-import { subscribe as subscribeLearning, learnAlias, logDecision, counts as learningCounts, reset as resetLearning } from './data/correctionsStore.js';
+import { subscribe as subscribeLearning, learnAlias, logDecision, counts as learningCounts, reset as resetLearning, getState as getLearningState } from './data/correctionsStore.js';
 import EvalDashboard from './components/EvalDashboard.jsx';
 import KpiCards from './components/KpiCards.jsx';
 import BatchFunnel from './components/BatchFunnel.jsx';
@@ -103,12 +103,9 @@ export default function App() {
     [displayInvoices, selectedPipelineId],
   );
 
-  // Eval tab consumes the routed results (routeInvoice output) of the real +
-  // ingested invoices — derived from the same unified model, no parallel flow.
-  const results = useMemo(
-    () => displayInvoices.filter(inv => inv.routed).map(inv => inv.routed),
-    [displayInvoices],
-  );
+  // Reviewer decisions (Approve/Reject log) for the Eval page — bumps with the
+  // learning store, which logDecision also notifies.
+  const decisions = useMemo(() => getLearningState().decisions, [learnVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flywheel impact (Phase F-lite): the counterfactual that makes the moat
   // *measurable*. Re-pipe the real + ingested invoices with learned aliases turned
@@ -554,7 +551,7 @@ export default function App() {
               <button onClick={() => setEvalOpen(false)} aria-label="Close" style={{ background: 'none', border: 'none', color: '#fff', fontSize: 22, lineHeight: 1, padding: '2px 7px' }}>×</button>
             </div>
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              <EvalDashboard results={results} flywheel={flywheel} />
+              <EvalDashboard flywheel={flywheel} batch={batch} invoices={displayInvoices} decisions={decisions} />
             </div>
           </aside>
         </>

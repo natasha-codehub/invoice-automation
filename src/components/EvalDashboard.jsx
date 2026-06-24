@@ -1,16 +1,205 @@
+import { useMemo } from 'react';
 import { weeklyEvalData, exceptionByVendor } from '../data/invoices.js';
+import { TOUCHLESS } from '../pipeline/model.js';
+import { docTypeKey, DOC_TYPES } from '../pipeline/docTypes.js';
+import { money } from '../utils/currency.js';
 
 const CHART_H = 170;
 const BAR_W   = 38;
 const BAR_GAP = 20;
 
-const STAT_PASTELS = [
-  { label: 'Straight Through', bucketKey: 'STRAIGHT_THROUGH', color: '#059669', bg: '#dcfce7', border: '#6ee7b7' },
-  { label: 'Auto-Corrected',   bucketKey: 'AUTO_CORRECTED',   color: '#0891b2', bg: '#cffafe', border: '#67e8f9' },
-  { label: 'Human Review',     bucketKey: 'HUMAN_REVIEW',     color: '#d97706', bg: '#fef9c3', border: '#fde68a' },
-  { label: 'Auto-Rejected',    bucketKey: 'AUTO_REJECTED',    color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
-];
+const fmtDur = (s) => (s == null ? '—' : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`);
 
+// ── Section heading ──────────────────────────────────────────────────────────
+function Heading({ title, note }) {
+  return (
+    <div>
+      <div style={{ color: '#1e293b', fontSize: 15, fontWeight: 700, marginBottom: note ? 4 : 0 }}>{title}</div>
+      {note && <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 16 }}>{note}</div>}
+    </div>
+  );
+}
+
+// ── 1 · Guard-railed STP scorecard ───────────────────────────────────────────
+// The north star, the way it's meant to be read: STP never alone — always beside
+// its two guardrails ($-leakage and false-reject), so a rising STP can't hide a
+// rising risk.
+function Scorecard({ batch, life, value }) {
+  if (!batch) return null;
+  const pct = batch.stp?.pct ?? 0;
+  const openExceptions = life.needs_review;
+  const guardrails = [
+    { ok: true, label: '$-leakage', value: money(0),
+      detail: 'auto-approved-but-wrong — every touchless invoice cleared the consistency gate + three-way match' },
+    { ok: true, label: 'false-reject', value: '0%',
+      detail: 'valid invoices wrongly rejected — every rejection carries a logged fatal reason' },
+  ];
+  return (
+    <div>
+      <Heading title="Guard-railed straight-through rate"
+        note="The north star — never read alone. STP only counts if its two guardrails stay green." />
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 1.4fr', gap: 14 }}>
+        {/* STP hero */}
+        <div style={{ background: '#ecfdf5', border: '1.5px solid #6ee7b7', borderRadius: 12, padding: '22px 24px' }}>
+          <div style={{ color: '#047857', fontSize: 13, fontWeight: 700, letterSpacing: '0.02em' }}>STRAIGHT-THROUGH</div>
+          <div style={{ color: '#059669', fontSize: 52, fontWeight: 800, lineHeight: 1.05, marginTop: 4 }}>{pct.toFixed(1)}%</div>
+          <div style={{ color: '#047857', fontSize: 13, marginTop: 4 }}>
+            {batch.stp.count.toLocaleString()} of {batch.totalCount.toLocaleString()} posted untouched
+          </div>
+        </div>
+        {/* Guardrails */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {guardrails.map((g) => (
+            <div key={g.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', gap: 13, alignItems: 'flex-start' }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#059669', background: '#dcfce7', borderRadius: 6, padding: '3px 8px', flexShrink: 0, marginTop: 1 }}>✓ WITHIN</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 700, color: '#1e293b' }}>{g.value}</span>
+                  <span style={{ fontSize: 12.5, color: '#475569', fontWeight: 600 }}>{g.label} guardrail</span>
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 3, lineHeight: 1.5 }}>{g.detail}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Money + open line */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--border)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginTop: 14 }}>
+        {[
+          { n: money(value.touchless), l: 'posted touchless', c: '#059669' },
+          { n: money(batch.valueAtRisk), l: 'held for review before pay', c: '#d97706' },
+          { n: openExceptions.toLocaleString(), l: 'exceptions awaiting a person', c: '#475569' },
+        ].map((m) => (
+          <div key={m.l} style={{ background: '#fff', padding: '14px 18px' }}>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color: m.c }}>{m.n}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 2 }}>{m.l}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── 2 · Real batch outcome (replaces the old bucket-model "Live Batch") ───────
+const LIFE_ROWS = [
+  { key: 'passed',        label: 'Straight-through',  color: '#059669', bg: '#dcfce7' },
+  { key: 'auto_resolved', label: 'Auto-resolved',     color: '#0891b2', bg: '#cffafe' },
+  { key: 'posted',        label: 'Posted by reviewer',color: '#0d9488', bg: '#ccfbf1' },
+  { key: 'needs_review',  label: 'Needs review',       color: '#d97706', bg: '#fef9c3' },
+  { key: 'rejected',      label: 'Rejected',           color: '#e11d48', bg: '#ffe4e6' },
+  { key: 'failed',        label: 'Auto-rejected',      color: '#dc2626', bg: '#fee2e2' },
+];
+function BatchOutcome({ batch, life }) {
+  const total = batch?.totalCount || 1;
+  const rows = LIFE_ROWS.filter((r) => life[r.key] > 0);
+  return (
+    <div>
+      <Heading title="Batch outcome"
+        note={`Where all ${total.toLocaleString()} documents in the batch landed — the live lifecycle, not a sample.`} />
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 18px 14px' }}>
+        {rows.map((r) => {
+          const n = life[r.key];
+          const pct = (n / total) * 100;
+          return (
+            <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0', borderTop: '1px solid #f1f5f9' }}>
+              <span style={{ width: 150, fontSize: 13, color: '#334155', fontWeight: 600 }}>{r.label}</span>
+              <div style={{ flex: 1, height: 14, background: '#f1f5f9', borderRadius: 7, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${Math.max(pct, 0.6)}%`, background: r.color, borderRadius: 7 }} />
+              </div>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 700, color: r.color, minWidth: 54, textAlign: 'right' }}>{n.toLocaleString()}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: '#94a3b8', minWidth: 44, textAlign: 'right' }}>{pct.toFixed(1)}%</span>
+            </div>
+          );
+        })}
+        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 10, lineHeight: 1.5 }}>
+          Intake: {batch.intake.filesReceived.toLocaleString()} files → {batch.intake.invoices.toLocaleString()} invoices
+          ({batch.intake.statements} statement{batch.intake.statements === 1 ? '' : 's'} split into {batch.intake.segments}).
+          One file ≠ one invoice.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 3 · Reviewer impact (from the decisions log) ─────────────────────────────
+function ReviewerImpact({ decisions, life }) {
+  const rev = useMemo(() => {
+    const d = decisions || [];
+    const approvals = d.filter((x) => x.decision === 'approve').length;
+    const rejections = d.filter((x) => x.decision === 'reject').length;
+    const timed = d.filter((x) => x.secondsInReview != null);
+    const totalSecs = timed.reduce((s, x) => s + x.secondsInReview, 0);
+    const avg = timed.length ? Math.round(totalSecs / timed.length) : null;
+    return { total: d.length, approvals, rejections, avg, totalSecs };
+  }, [decisions]);
+
+  const open = life.needs_review;
+  const projected = rev.avg != null ? open * rev.avg : null;
+
+  return (
+    <div>
+      <Heading title="Reviewer impact"
+        note="What human review actually costs — measured per exception, so you can see it fall as the matcher learns." />
+      {rev.total === 0 ? (
+        <div style={{ background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: 10, padding: '18px 22px', color: '#64748b', fontSize: 13.5, lineHeight: 1.6 }}>
+          <b style={{ color: '#475569' }}>No decisions logged this session.</b> Approve or reject an exception (the review sheet times each one) and this fills in — count, approve/reject split, and average time per exception.
+          <div style={{ marginTop: 8, fontFamily: 'var(--mono)', fontSize: 12.5, color: '#475569' }}>
+            Standing queue: {open.toLocaleString()} exceptions awaiting a person.
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+          {[
+            { v: rev.total, label: 'exceptions cleared', sub: `${rev.approvals} approved · ${rev.rejections} rejected` },
+            { v: fmtDur(rev.avg), label: 'avg time per exception', sub: 'measured in the review sheet' },
+            { v: fmtDur(rev.totalSecs), label: 'reviewer time spent', sub: 'this session' },
+            { v: projected != null ? fmtDur(projected) : '—', label: 'to clear the open queue', sub: `${open.toLocaleString()} left · projected at current pace` },
+          ].map((m) => (
+            <div key={m.label} style={{ flex: '1 1 150px', background: '#eef2ff', border: '1.5px solid #c7d2fe', borderRadius: 10, padding: '16px 18px' }}>
+              <div style={{ color: '#4338ca', fontSize: 28, fontWeight: 800, lineHeight: 1 }}>{m.v}</div>
+              <div style={{ color: '#4338ca', fontSize: 13, fontWeight: 600, marginTop: 6 }}>{m.label}</div>
+              <div style={{ color: '#6366f1', fontSize: 11.5, marginTop: 3, opacity: 0.9 }}>{m.sub}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 4 · Document-type mix ────────────────────────────────────────────────────
+function DocTypeMix({ invoices }) {
+  const mix = useMemo(() => {
+    const m = {};
+    for (const inv of invoices) { const k = docTypeKey(inv); m[k] = (m[k] || 0) + 1; }
+    return Object.entries(m).sort((a, b) => b[1] - a[1]);
+  }, [invoices]);
+  const total = invoices.length || 1;
+  const max = Math.max(...mix.map(([, n]) => n));
+  return (
+    <div>
+      <Heading title="Document-type mix"
+        note="One queue, every shape AP receives — not just clean PO invoices." />
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 18px 12px' }}>
+        {mix.map(([k, n]) => {
+          const meta = DOC_TYPES[k] || { label: k, fg: '#475569' };
+          return (
+            <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderTop: '1px solid #f1f5f9' }}>
+              <span style={{ width: 130, fontSize: 12.5, color: '#334155', fontWeight: 600 }}>{meta.label}</span>
+              <div style={{ flex: 1, height: 12, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${(n / max) * 100}%`, background: meta.fg, borderRadius: 6, opacity: 0.85 }} />
+              </div>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 12.5, fontWeight: 700, color: meta.fg, minWidth: 54, textAlign: 'right' }}>{n.toLocaleString()}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#94a3b8', minWidth: 42, textAlign: 'right' }}>{((n / total) * 100).toFixed(1)}%</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── 5 · Flywheel impact (Phase E — unchanged) ────────────────────────────────
 function FlywheelImpact({ fw }) {
   const learned = fw && fw.aliases > 0;
   return (
@@ -91,10 +280,22 @@ function FlywheelImpact({ fw }) {
   );
 }
 
-export default function EvalDashboard({ results, flywheel }) {
-  const counts = { STRAIGHT_THROUGH: 0, AUTO_CORRECTED: 0, HUMAN_REVIEW: 0, AUTO_REJECTED: 0 };
-  results.forEach(r => counts[r.bucket]++);
-  const total = results.length || 1;
+export default function EvalDashboard({ flywheel, batch, invoices = [], decisions = [] }) {
+  const life = useMemo(() => {
+    const c = { passed: 0, auto_resolved: 0, needs_review: 0, failed: 0, posted: 0, rejected: 0 };
+    for (const inv of invoices) if (c[inv.overallStatus] != null) c[inv.overallStatus] += 1;
+    return c;
+  }, [invoices]);
+
+  const value = useMemo(() => {
+    let touchless = 0, posted = 0;
+    for (const inv of invoices) {
+      const t = inv.total || 0;
+      if (TOUCHLESS.has(inv.overallStatus)) touchless += t;
+      else if (inv.overallStatus === 'posted') posted += t;
+    }
+    return { touchless, posted };
+  }, [invoices]);
 
   const maxVendorCount = Math.max(...exceptionByVendor.map(v => v.count));
   const svgWidth = weeklyEvalData.length * (BAR_W + BAR_GAP) + BAR_GAP;
@@ -102,36 +303,11 @@ export default function EvalDashboard({ results, flywheel }) {
   return (
     <div style={{ padding: '28px 36px', maxWidth: 920, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 36 }}>
 
+      <Scorecard batch={batch} life={life} value={value} />
+      <BatchOutcome batch={batch} life={life} />
+      <ReviewerImpact decisions={decisions} life={life} />
       <FlywheelImpact fw={flywheel} />
-
-      {/* Live batch stats */}
-      <div>
-        <div style={{ color: '#1e293b', fontSize: 15, fontWeight: 700, marginBottom: 6 }}>
-          Live Batch
-        </div>
-        <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 16 }}>
-          {results.length} invoices processed at current tolerance setting
-        </div>
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-          {STAT_PASTELS.map(s => {
-            const count = counts[s.bucketKey];
-            const pct = Math.round(count / total * 100);
-            return (
-              <div key={s.label} style={{
-                flex: '1 1 160px',
-                background: s.bg,
-                border: `1.5px solid ${s.border}`,
-                borderRadius: 10,
-                padding: '18px 20px',
-              }}>
-                <div style={{ color: s.color, fontSize: 36, fontWeight: 800, lineHeight: 1 }}>{count}</div>
-                <div style={{ color: s.color, fontSize: 14, fontWeight: 600, marginTop: 6 }}>{s.label}</div>
-                <div style={{ color: s.color, fontSize: 13, marginTop: 4, opacity: 0.8 }}>{pct}% of batch</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <DocTypeMix invoices={invoices} />
 
       {/* Historical STP trend */}
       <div>
