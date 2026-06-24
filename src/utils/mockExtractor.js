@@ -30,6 +30,7 @@ const MATHESON_EXTRACTION = {
   subtotal: 403.00,
   tax: 72.54,
   total: 475.54,
+  currency: 'USD',
   goodsReceipt: false,
   duplicate: false,
   confidence: 0.76,
@@ -81,7 +82,7 @@ const SHARPGAS_EXTRACTION = {
   confidence: 0.61,
   warnings: [
     'Document is a STATEMENT with 3 transactions — extracted most recent (03/15/2024)',
-    'Earlier transactions: 02/10/2024 (₹3,200) and 01/08/2024 (₹3,100) — not included',
+    'Earlier transactions: 02/10/2024 ($3,200) and 01/08/2024 ($3,100) — not included',
     'Statement may require full reconciliation against all 3 transactions',
     'Date format DD/MM/YYYY normalised to 2024-03-15',
   ],
@@ -96,7 +97,7 @@ DATE        INVOICE       DESCRIPTION                    AMOUNT
                           Cylinder maintenance             125.00
                                                        ---------
 MOST RECENT TRANSACTION TOTAL (excl. tax)              3,500.00
-GST 18%                                                  630.00
+Tax 18%                                                  630.00
 AMOUNT DUE (current transaction)                       4,130.00
 
 PO Reference: PO-2024-003`,

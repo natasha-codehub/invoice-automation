@@ -65,7 +65,7 @@ export const sampleInvoices = [
     total: 3889.28,
     goodsReceipt: true,
     duplicate: false,
-    // PO-2024-005 amount is ₹3200; invoice total ₹3296 = 3% over
+    // PO-2024-005 amount is $3200; invoice total $3296 = 3% over
   },
   {
     id: 'INV-005',

@@ -7,10 +7,9 @@
  * width table needed) and returns a `data:application/pdf;base64,…` URL that
  * feeds straight into the existing <iframe src={sourceUrl}> source viewer.
  *
- * Everything emitted is ASCII so `btoa` is safe and `Length` == string length.
- * Currency is written as "INR" rather than ₹ — Helvetica's default encoding has
- * no rupee glyph (the Phase G currency debt), and a real document shouldn't show
- * a tofu box.
+ * Everything emitted is ASCII so `btoa` is safe and `Length` == string length —
+ * which is also why currency uses "$" (a standard-encoding glyph), matching the
+ * USD documents the app renders everywhere else.
  */
 
 const esc = (s) =>
@@ -21,10 +20,12 @@ const esc = (s) =>
     // strip anything non-ASCII so the byte stream stays btoa-safe
     .replace(/[^\x20-\x7e]/g, '');
 
-const money = (n) =>
-  n == null
-    ? '-'
-    : 'INR ' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = (n) => {
+  if (n == null) return '-';
+  const v = Number(n);
+  const s = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (v < 0 ? '-$' : '$') + s;
+};
 
 // Build the page content stream from the extracted fields.
 // opts: { title, numberLabel, totalLabel } let the same layout render an invoice,

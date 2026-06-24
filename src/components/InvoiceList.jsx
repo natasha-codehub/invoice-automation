@@ -1,3 +1,5 @@
+import { money } from '../utils/currency.js';
+
 export default function InvoiceList({ results, selectedIdx, onSelect }) {
   return (
     <div style={{
@@ -50,7 +52,7 @@ export default function InvoiceList({ results, selectedIdx, onSelect }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
               {r.invoice?.total != null ? (
                 <span style={{ fontSize: 13, color: '#475569', fontWeight: 600 }}>
-                  ₹{r.invoice.total.toLocaleString()}
+                  {money(r.invoice.total)}
                 </span>
               ) : <span />}
               {r.rawInvoice?.extractionEngine && (

@@ -1,4 +1,5 @@
 import { STAGES, STAGE_LABELS, STATUS_META } from '../pipeline/model.js';
+import { money } from '../utils/currency.js';
 
 export default function InvoiceStepper({ pinv, activeStage, onStageClick }) {
   if (!pinv) return null;
@@ -11,7 +12,7 @@ export default function InvoiceStepper({ pinv, activeStage, onStageClick }) {
       <div style={{ padding: '12px 20px 4px', display: 'flex', alignItems: 'baseline', gap: 10 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: '#1e293b' }}>{pinv.vendorName}</span>
         <span style={{ fontSize: 12, color: '#64748b' }}>{pinv.id}</span>
-        {pinv.total != null && <span style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>₹{pinv.total.toLocaleString()}</span>}
+        {pinv.total != null && <span style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>{money(pinv.total)}</span>}
       </div>
 
       {/* Provenance subline — for invoices split out of a multi-invoice statement (Phase D) */}

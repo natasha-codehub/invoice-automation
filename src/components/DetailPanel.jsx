@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { money } from '../utils/currency.js';
 
 const BUCKET_ICONS = {
   STRAIGHT_THROUGH: '✓',
@@ -292,9 +293,9 @@ export default function DetailPanel({ result }) {
               <MetaRow label="Vendor"        value={invoice?.vendorName} />
               <MetaRow label="PO Number"     value={invoice?.poNumber} />
               <MetaRow label="Date"          value={invoice?.date} />
-              <MetaRow label="Subtotal"      value={invoice?.subtotal != null ? `₹${invoice.subtotal.toLocaleString()}` : null} />
-              <MetaRow label="Tax"           value={invoice?.tax != null ? `₹${invoice.tax.toLocaleString()}` : null} />
-              <MetaRow label="Total"         value={invoice?.total != null ? `₹${invoice.total.toLocaleString()}` : null} />
+              <MetaRow label="Subtotal"      value={invoice?.subtotal != null ? money(invoice.subtotal) : null} />
+              <MetaRow label="Tax"           value={invoice?.tax != null ? money(invoice.tax) : null} />
+              <MetaRow label="Total"         value={invoice?.total != null ? money(invoice.total) : null} />
               <MetaRow label="Goods Receipt" value={invoice?.goodsReceipt === true ? 'Confirmed' : invoice?.goodsReceipt === false ? 'Pending' : null} />
               <MetaRow label="Duplicate"     value={invoice?.duplicate === true ? 'Yes — flagged' : 'No'} />
             </tbody>
@@ -321,8 +322,8 @@ export default function DetailPanel({ result }) {
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '8px 14px 8px 0', color: '#475569', fontSize: 14 }}>{item.desc}</td>
                     <td style={{ padding: '8px 14px 8px 0', color: '#475569', textAlign: 'right', fontSize: 14 }}>{item.qty}</td>
-                    <td style={{ padding: '8px 14px 8px 0', color: '#475569', textAlign: 'right', fontSize: 14 }}>₹{item.unit}</td>
-                    <td style={{ padding: '8px 0', color: '#1e293b', textAlign: 'right', fontWeight: 700, fontSize: 14 }}>₹{item.total.toLocaleString()}</td>
+                    <td style={{ padding: '8px 14px 8px 0', color: '#475569', textAlign: 'right', fontSize: 14 }}>{money(item.unit)}</td>
+                    <td style={{ padding: '8px 0', color: '#1e293b', textAlign: 'right', fontWeight: 700, fontSize: 14 }}>{money(item.total)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -81,6 +81,11 @@ function normalise(invoice) {
 export function validateInvoice(invoice, tolerancePercent = 2) {
   const { corrected, corrections } = normalise(invoice);
 
+  // Currency symbol follows the jurisdiction (US → $, IN → ₹) so every check
+  // message reads in the document's own currency.
+  const jurisdiction = inferJurisdiction(corrected);
+  const sym = jurisdiction === 'IN' ? '₹' : '$';
+
   const checks = [];
 
   // CHECK 1 — MANDATORY FIELDS [FATAL]
@@ -120,7 +125,7 @@ export function validateInvoice(invoice, tolerancePercent = 2) {
     passed: !!matchedPO,
     fatal: true,
     detail: matchedPO
-      ? `PO ${corrected.poNumber} found — amount ₹${matchedPO.amount.toLocaleString()}`
+      ? `PO ${corrected.poNumber} found — amount ${sym}${matchedPO.amount.toLocaleString()}`
       : `PO "${corrected.poNumber || '(blank)'}" not found in open PO list`,
   });
 
@@ -133,8 +138,8 @@ export function validateInvoice(invoice, tolerancePercent = 2) {
     const variancePct = Math.abs((invoiceTotal - poAmount) / poAmount) * 100;
     lineRecPassed = variancePct <= tolerancePercent;
     lineRecDetail = lineRecPassed
-      ? `Invoice total ₹${invoiceTotal.toLocaleString()} within ${tolerancePercent}% of PO ₹${poAmount.toLocaleString()} (variance ${variancePct.toFixed(2)}%)`
-      : `Invoice total ₹${invoiceTotal.toLocaleString()} vs PO ₹${poAmount.toLocaleString()} — variance ${variancePct.toFixed(2)}% exceeds ${tolerancePercent}% threshold`;
+      ? `Invoice total ${sym}${invoiceTotal.toLocaleString()} within ${tolerancePercent}% of PO ${sym}${poAmount.toLocaleString()} (variance ${variancePct.toFixed(2)}%)`
+      : `Invoice total ${sym}${invoiceTotal.toLocaleString()} vs PO ${sym}${poAmount.toLocaleString()} — variance ${variancePct.toFixed(2)}% exceeds ${tolerancePercent}% threshold`;
   }
   checks.push({
     id: 'LINE_ITEM_RECONCILIATION',
@@ -149,7 +154,6 @@ export function validateInvoice(invoice, tolerancePercent = 2) {
   // USD gas invoices (no GST line). Now we branch on jurisdiction: India → 18% GST;
   // US → sales tax, where industrial gas bought for resale is typically exempt, so
   // a $0/absent tax line is expected, not a violation.
-  const jurisdiction = inferJurisdiction(corrected);
   let taxPassed = true;
   let taxLabel = 'Tax Compliance';
   let taxDetail = 'Tax not provided';
@@ -160,8 +164,8 @@ export function validateInvoice(invoice, tolerancePercent = 2) {
       const taxDiff = Math.abs(corrected.tax - expectedTax);
       taxPassed = taxDiff <= 1;
       taxDetail = taxPassed
-        ? `Tax ₹${corrected.tax} matches 18% GST of subtotal ₹${corrected.subtotal} (expected ₹${expectedTax.toFixed(2)})`
-        : `Tax ₹${corrected.tax} ≠ expected ₹${expectedTax.toFixed(2)} (18% GST of ₹${corrected.subtotal}) — difference ₹${taxDiff.toFixed(2)}`;
+        ? `Tax ${sym}${corrected.tax} matches 18% GST of subtotal ${sym}${corrected.subtotal} (expected ${sym}${expectedTax.toFixed(2)})`
+        : `Tax ${sym}${corrected.tax} ≠ expected ${sym}${expectedTax.toFixed(2)} (18% GST of ${sym}${corrected.subtotal}) — difference ${sym}${taxDiff.toFixed(2)}`;
     } else {
       taxDetail = 'GST not provided on document';
     }
@@ -171,8 +175,8 @@ export function validateInvoice(invoice, tolerancePercent = 2) {
     const tax = corrected.tax || 0;
     taxPassed = true; // never false-reject on an expected exemption
     taxDetail = tax === 0
-      ? 'US sales tax $0.00 — consistent with industrial-gas resale exemption'
-      : `US sales tax $${tax} present — verify taxability for this jurisdiction`;
+      ? `US sales tax ${sym}0.00 — consistent with industrial-gas resale exemption`
+      : `US sales tax ${sym}${tax} present — verify taxability for this jurisdiction`;
   }
   checks.push({
     id: 'TAX_COMPLIANCE',

@@ -100,6 +100,7 @@ export function sampleInvoicesWithSource() {
   return sampleInvoices.map((s) => ({
     ...s,
     vendorRaw: s.vendorName,
+    currency: 'USD', // USD shop → US jurisdiction (no GST label on these invoices)
     confidence: 0.92,
     fieldConfidence: sampleFieldConfidence(s),
     extractionEngine: 'Demo',

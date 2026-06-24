@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { STATUS_META, STAGE_LABELS } from '../pipeline/model.js';
 import { docTypeKey, docTypeMeta, DOC_TYPES } from '../pipeline/docTypes.js';
+import { money } from '../utils/currency.js';
 
 /**
  * Worklist — the Document Queue table (UI redesign).
@@ -207,7 +208,7 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
 
                 {/* Amount */}
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 12.5, textAlign: 'right', fontWeight: 600, color: inv.valueAtRisk > 0 ? 'var(--red)' : 'var(--text-dim)' }}>
-                  {inv.total != null ? `₹${inv.total.toLocaleString()}` : '—'}
+                  {money(inv.total)}
                 </span>
               </button>
             );

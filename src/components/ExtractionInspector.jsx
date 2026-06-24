@@ -1,4 +1,5 @@
 import { useState, Fragment } from 'react';
+import { money } from '../utils/currency.js';
 
 const FIELDS = [
   { key: 'vendorRaw',     label: 'Vendor',     conf: 'vendor',        type: 'text',   section: 'Header' },
@@ -23,8 +24,6 @@ function ConfChip({ c }) {
     </span>
   );
 }
-
-const money = (n) => (n == null ? '—' : `₹${Number(n).toLocaleString()}`);
 
 // Styled mock invoice page built from the extraction — shown when there's no
 // real source PDF (synthetic / sample invoices), mirroring a rendered document.

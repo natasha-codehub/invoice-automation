@@ -35,18 +35,18 @@ Account: Industrial-2847        Statement Period: Jan–Mar 2024
 PAGE 1  ── Invoice SG-2024-0118 (08/01/2024) ──────────────────────────────
   Nitrogen cylinder 40cf        20   155.0000    3,100.00
   Delivery charge                1   250.0000      250.00
-  Sub Total 3,350.00   GST 18% 603.00   Total (INR) 3,953.00
+  Sub Total 3,350.00   Tax 18% 603.00   Total (USD) 3,953.00
   PO Reference: PO-SG-0118
 
 PAGE 2  ── Invoice SG-2024-0210 (10/02/2024) ──────────────────────────────
   Bulk propane 145 gal         145    22.5000    3,262.50
-  Sub Total 3,262.50   GST 18% 587.25   Total (INR) 3,849.75
+  Sub Total 3,262.50   Tax 18% 587.25   Total (USD) 3,849.75
   PO Reference: PO-SG-0210
 
 PAGE 3  ── Invoice SG-2024-0315 (15/03/2024) ──────────────────────────────
   Bulk propane 150 gal         150    22.5000    3,375.00
   Cylinder maintenance fee       1   125.0000      125.00
-  Sub Total 3,500.00   GST 18% 630.00   Total (INR) 4,130.00
+  Sub Total 3,500.00   Tax 18% 630.00   Total (USD) 4,130.00
   PO Reference: PO-SG-0315   [faint print — low scan quality on this page]`,
 
   transactions: [
@@ -66,7 +66,7 @@ PAGE 3  ── Invoice SG-2024-0315 (15/03/2024) ──────────�
         subtotal: 3350.0,
         tax: 603.0,
         total: 3953.0,
-        currency: 'INR',
+        currency: 'USD',
         goodsReceipt: true,
         duplicate: false,
         confidence: 0.86,
@@ -76,7 +76,7 @@ PAGE 3  ── Invoice SG-2024-0315 (15/03/2024) ──────────�
 Customer P.O.: PO-SG-0118
 Nitrogen cylinder 40cf   20  155.0000  3,100.00
 Delivery charge           1  250.0000    250.00
-Sub Total 3,350.00   GST 18% 603.00   Total (INR) 3,953.00`,
+Sub Total 3,350.00   Tax 18% 603.00   Total (USD) 3,953.00`,
       },
     },
     {
@@ -94,7 +94,7 @@ Sub Total 3,350.00   GST 18% 603.00   Total (INR) 3,953.00`,
         subtotal: 3262.5,
         tax: 587.25,
         total: 3849.75,
-        currency: 'INR',
+        currency: 'USD',
         goodsReceipt: true,
         duplicate: false,
         confidence: 0.80,
@@ -105,7 +105,7 @@ Sub Total 3,350.00   GST 18% 603.00   Total (INR) 3,953.00`,
         rawText: `SHARPGAS INC — Invoice SG-2024-0210   Date: 10/02/2024
 Customer P.O.: PO-SG-0210
 Bulk propane 145 gal   145  22.5000  3,262.50
-Sub Total 3,262.50   GST 18% 587.25   Total (INR) 3,849.75`,
+Sub Total 3,262.50   Tax 18% 587.25   Total (USD) 3,849.75`,
       },
     },
     {
@@ -124,7 +124,7 @@ Sub Total 3,262.50   GST 18% 587.25   Total (INR) 3,849.75`,
         subtotal: 3500.0,
         tax: 630.0,
         total: 4130.0,
-        currency: 'INR',
+        currency: 'USD',
         goodsReceipt: false,
         duplicate: false,
         confidence: 0.58,
@@ -137,7 +137,7 @@ Sub Total 3,262.50   GST 18% 587.25   Total (INR) 3,849.75`,
 Customer P.O.: PO-SG-0315   [faint print]
 Bulk propane 150 gal   150  22.5000  3,375.00
 Cylinder maintenance fee 1  125.0000   125.00
-Sub Total 3,500.00   GST 18% 630.00   Total (INR) 4,130.00`,
+Sub Total 3,500.00   Tax 18% 630.00   Total (USD) 4,130.00`,
       },
     },
   ],

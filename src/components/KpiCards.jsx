@@ -7,7 +7,9 @@
  * the batch intake summary so the numbers tell a story, not just a count.
  */
 
-const money = (n) => `₹${Math.round(n || 0).toLocaleString()}`;
+import { money as fmtMoney } from '../utils/currency.js';
+
+const money = (n) => fmtMoney(Math.round(n || 0));
 
 function Card({ label, value, foot, bar, val }) {
   return (
