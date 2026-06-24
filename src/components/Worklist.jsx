@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { STATUS_META, STAGE_LABELS } from '../pipeline/model.js';
+import { docTypeKey, docTypeMeta, DOC_TYPES } from '../pipeline/docTypes.js';
 
 /**
  * Worklist — the Document Queue table (UI redesign).
@@ -20,16 +21,14 @@ const PILL = {
   auto_resolved: { label: 'Auto-resolved', c: 'var(--cyan)',  bg: 'var(--cyan-bg)',  dot: '#06b6d4' },
   needs_review:  { label: 'Needs review',  c: 'var(--amber)', bg: 'var(--amber-bg)', dot: '#f59e0b' },
   failed:        { label: 'Failed',        c: 'var(--red)',   bg: 'var(--red-bg)',   dot: '#ef4444' },
+  posted:        { label: 'Posted',        c: '#0d9488',      bg: '#ccfbf1',         dot: '#0d9488' },
+  rejected:      { label: 'Rejected',      c: '#e11d48',      bg: '#ffe4e6',         dot: '#e11d48' },
   pending:       { label: 'In flight',     c: 'var(--muted)', bg: 'var(--surface2)', dot: '#94a3b8' },
 };
 
 function confColor(c) {
   if (c == null) return 'var(--faint)';
   return c >= 0.85 ? 'var(--green)' : c >= 0.6 ? 'var(--amber)' : 'var(--red)';
-}
-
-function docType(inv) {
-  return inv.provenance?.kind === 'statement-segment' ? 'Statement' : 'Content Invoice';
 }
 
 function StatusPill({ status }) {
@@ -52,6 +51,7 @@ const SORTS = {
 };
 
 export default function Worklist({ invoices, totalCount, selectedId, onSelect, filter, onClearFilter }) {
+  const [typeFilter, setTypeFilter] = useState('all');
   const [sortKey, setSortKey] = useState('risk');
   const [scrollTop, setScrollTop] = useState(0);
   const [viewH, setViewH] = useState(520);
@@ -67,7 +67,28 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
     return () => ro.disconnect();
   }, []);
 
-  const sorted = useMemo(() => [...invoices].sort(SORTS[sortKey].fn), [invoices, sortKey]);
+  // Queue ordering floats the demoable cases up so they're one scroll away, not
+  // buried in a thousand rows: real scanned PDFs first (tier 0 — clicking the top
+  // row opens an actual document), then the rest of the real + ingested set
+  // (tier 1), then the synthetic fill (tier 2). The chosen sort still orders rows
+  // *within* each tier.
+  // Document types actually present in the queue → the type-filter options (so we
+  // never show a filter for a type that has no rows).
+  const typesPresent = useMemo(() => {
+    const seen = new Set();
+    for (const inv of invoices) seen.add(docTypeKey(inv));
+    return Object.keys(DOC_TYPES).filter(k => seen.has(k));
+  }, [invoices]);
+
+  const tier = (inv) => (inv.isSynthetic ? 2 : inv.sourceKind === 'native' ? 0 : 1);
+  const sorted = useMemo(() => {
+    const base = typeFilter === 'all' ? invoices : invoices.filter(inv => docTypeKey(inv) === typeFilter);
+    return [...base].sort((a, b) => {
+      const ta = tier(a), tb = tier(b);
+      if (ta !== tb) return ta - tb;
+      return SORTS[sortKey].fn(a, b);
+    });
+  }, [invoices, sortKey, typeFilter]);
 
   const start = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
   const end = Math.min(sorted.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN);
@@ -90,6 +111,18 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
           </span>
         )}
         <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 11, color: 'var(--faint)' }}>type</span>
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="wl-type"
+          aria-label="Filter by document type"
+        >
+          <option value="all">All types</option>
+          {typesPresent.map(k => (
+            <option key={k} value={k}>{DOC_TYPES[k].label}</option>
+          ))}
+        </select>
         <span style={{ fontSize: 11, color: 'var(--faint)' }}>sort</span>
         {Object.entries(SORTS).map(([k, s]) => (
           <button key={k} onClick={() => setSortKey(k)} className={`wl-sort${sortKey === k ? ' wl-sort-active' : ''}`}>{s.label}</button>
@@ -114,7 +147,7 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
             const isLive = String(inv.id).startsWith('INV-LIVE-');
             const invNo = inv.extraction?.invoiceNumber;
             const prov = inv.provenance;
-            const src = inv.sourceFile || inv.scenario || `stopped at ${STAGE_LABELS[inv.stoppedAt]}`;
+            const src = inv.scenario || inv.sourceFile || `stopped at ${STAGE_LABELS[inv.stoppedAt]}`;
             return (
               <button
                 key={inv.id}
@@ -151,13 +184,17 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
 
                 {/* Type */}
                 <span>
-                  <span style={{
-                    fontFamily: 'var(--mono)', fontSize: 10.5, padding: '2px 8px', borderRadius: 5, fontWeight: 500, whiteSpace: 'nowrap',
-                    background: docType(inv) === 'Statement' ? '#efeafd' : '#e8eefe',
-                    color: docType(inv) === 'Statement' ? '#6d28d9' : '#2a3bb5',
-                  }}>
-                    {docType(inv)}
-                  </span>
+                  {(() => {
+                    const dt = docTypeMeta(inv);
+                    return (
+                      <span style={{
+                        fontFamily: 'var(--mono)', fontSize: 10.5, padding: '2px 8px', borderRadius: 5, fontWeight: 500, whiteSpace: 'nowrap',
+                        background: dt.bg, color: dt.fg,
+                      }}>
+                        {dt.label}
+                      </span>
+                    );
+                  })()}
                 </span>
 
                 {/* Status */}
@@ -184,6 +221,9 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
           background: #fff; color: var(--muted); font-family: var(--mono); }
         .wl-sort:hover { border-color: var(--accent); color: var(--accent); }
         .wl-sort-active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+        .wl-type { font-size: 11px; padding: 3px 8px; border: 1px solid var(--border2); border-radius: 6px;
+          background: #fff; color: var(--muted); font-family: var(--mono); cursor: pointer; }
+        .wl-type:hover { border-color: var(--accent); color: var(--accent); }
       `}</style>
     </div>
   );

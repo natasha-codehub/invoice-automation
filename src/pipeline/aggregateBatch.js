@@ -26,13 +26,15 @@ export function aggregateBatch(invoices, batchId = 'batch') {
   }
 
   const total = invoices.length;
-  let touchless = 0, review = 0, failed = 0, valueAtRisk = 0, valueTotal = 0;
+  let touchless = 0, review = 0, failed = 0, posted = 0, rejected = 0, valueAtRisk = 0, valueTotal = 0;
   // Intake/segmentation accounting (Stage ①): files received vs invoices produced.
   let segments = 0, rejectedAtIntake = 0;
   const parentDocs = new Set();
   for (const inv of invoices) {
     if (TOUCHLESS.has(inv.overallStatus)) touchless += 1;
     else if (inv.overallStatus === STATUS.FAILED) failed += 1;
+    else if (inv.overallStatus === STATUS.POSTED) posted += 1;     // human-approved → resolved, not touchless STP
+    else if (inv.overallStatus === STATUS.REJECTED) rejected += 1; // human-rejected → resolved
     else review += 1;
     valueAtRisk += inv.valueAtRisk || 0;
     valueTotal += inv.total || 0;
@@ -57,6 +59,8 @@ export function aggregateBatch(invoices, batchId = 'batch') {
     stp: { count: touchless, pct: total ? (touchless / total) * 100 : 0 },
     needsReview: review,
     failed,
+    posted,
+    rejected,
     valueAtRisk,
     valueTotal,
     intake: {

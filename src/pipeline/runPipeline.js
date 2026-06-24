@@ -169,6 +169,8 @@ export function runPipeline(invoice, tolerance = 2, batchId = 'batch', opts = {}
     fieldConfidence: invoice.fieldConfidence || null,
     sourceUrl: invoice.sourceUrl || null,
     sourceFile: invoice.sourceFile || null,
+    sourceKind: invoice.sourceKind || null,
+    docType: invoice.docType || null,
     provenance: prov,
     extraction: invoice.confidence != null ? invoice : null,
     routed,

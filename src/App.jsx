@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { sampleInvoices } from './data/invoices.js';
 import { DEMO_MATHESON } from './utils/mockExtractor.js';
 import { runExtraction } from './utils/extraction/providers.js';
 import { SHARPGAS_STATEMENT } from './data/statements.js';
 import { segmentDocument } from './pipeline/segmentation.js';
-import { bundledInvoices, generateSynthetic } from './pipeline/generateBatch.js';
+import { bundledInvoices, sampleInvoicesWithSource, referenceDocs, generateSynthetic } from './pipeline/generateBatch.js';
 import { runPipeline } from './pipeline/runPipeline.js';
-import { TOUCHLESS } from './pipeline/model.js';
+import { TOUCHLESS, mkStage, STATUS } from './pipeline/model.js';
 import { aggregateBatch } from './pipeline/aggregateBatch.js';
 import { subscribe as subscribeLearning, learnAlias, logDecision, counts as learningCounts, reset as resetLearning } from './data/correctionsStore.js';
 import EvalDashboard from './components/EvalDashboard.jsx';
@@ -17,7 +16,7 @@ import ReviewSheet from './components/ReviewSheet.jsx';
 
 const TOLERANCES = [1, 2, 3, 5];
 const BATCH_ID = 'B-2026-0617';
-const SYNTH_COUNT = 985; // + 15 real (12 invoices + 3 statement segments) ≈ a 1,000-doc batch
+const SYNTH_COUNT = 983; // + 15 real (12 invoices + 3 statement segments) + 2 reference docs (PO, credit note) = a 1,000-doc batch
 
 export default function App() {
   const [tolerance, setTolerance] = useState(2);
@@ -66,8 +65,11 @@ export default function App() {
   // Real invoices (statement segments + 4 bundled ESPRIGAS + 8 samples) and the
   // synthetic fill are each built once; only the real + ingested set is re-piped
   // on tolerance change, so the funnel moves for reasons tolerance controls.
-  const realRaw = useMemo(() => [...statementSegments, ...bundledInvoices(), ...sampleInvoices], [statementSegments]);
+  const realRaw = useMemo(() => [...statementSegments, ...bundledInvoices(), ...sampleInvoicesWithSource()], [statementSegments]);
   const synthetic = useMemo(() => generateSynthetic(SYNTH_COUNT, BATCH_ID), []);
+  // Reference documents (PO, credit note) — pre-baked like the synthetic fill (they
+  // skip the invoice flow), but real & demoable so they sit in the top tier.
+  const refDocs = useMemo(() => referenceDocs(BATCH_ID), []);
   const piped = useMemo(
     () => [...liveRaw, ...realRaw].map(inv => runPipeline(inv, tolerance, BATCH_ID)),
     // learnVersion is intentional: re-map the batch when an alias is taught
@@ -76,8 +78,8 @@ export default function App() {
   );
 
   const displayInvoices = useMemo(
-    () => [...piped, ...synthetic].map(inv => patched[inv.id] || inv),
-    [piped, synthetic, patched],
+    () => [...piped, ...refDocs, ...synthetic].map(inv => patched[inv.id] || inv),
+    [piped, refDocs, synthetic, patched],
   );
   const batch = useMemo(() => aggregateBatch(displayInvoices, BATCH_ID), [displayInvoices]);
 
@@ -91,7 +93,7 @@ export default function App() {
 
   // Counts for the lifecycle tabs.
   const lifecycleCounts = useMemo(() => {
-    const c = { passed: 0, auto_resolved: 0, needs_review: 0, failed: 0 };
+    const c = { passed: 0, auto_resolved: 0, needs_review: 0, failed: 0, posted: 0, rejected: 0 };
     for (const inv of displayInvoices) if (c[inv.overallStatus] != null) c[inv.overallStatus] += 1;
     return c;
   }, [displayInvoices]);
@@ -220,11 +222,35 @@ export default function App() {
   // Terminal actions — now logged to the decisions store (E2). secondsInReview is
   // the time-per-exception metric, measured by the sheet.
   const onApprove = useCallback((pinv, secondsInReview) => {
-    logDecision({ invoiceId: pinv?.id, vendor: pinv?.routed?.normalisedVendor || pinv?.vendorName, decision: 'approve', secondsInReview });
+    if (!pinv) return;
+    logDecision({ invoiceId: pinv.id, vendor: pinv.routed?.normalisedVendor || pinv.vendorName, decision: 'approve', secondsInReview });
+    // Make the action land on screen: the doc leaves the review queue and posts.
+    // It's human-resolved, so it does NOT count toward (zero-touch) STP. Resolve
+    // the stage it stopped at too, so the Pipeline-view funnel stays consistent.
+    const stage = pinv.stoppedAt && pinv.stoppedAt !== 'route' ? pinv.stoppedAt : null;
+    setPatched(p => ({ ...p, [pinv.id]: {
+      ...pinv,
+      overallStatus: STATUS.POSTED,
+      stoppedAt: 'route',
+      valueAtRisk: 0,
+      stages: {
+        ...pinv.stages,
+        ...(stage ? { [stage]: mkStage(STATUS.PASSED, pinv.stages[stage]?.confidence ?? null, [{ severity: 'info', message: 'Resolved by reviewer' }]) } : {}),
+        route: mkStage(STATUS.PASSED, null, [{ severity: 'info', message: 'Approved & posted to ERP by reviewer' }]),
+      },
+    } }));
     closeSheet();
   }, [closeSheet]);
   const onReject = useCallback((pinv, reason, secondsInReview) => {
-    logDecision({ invoiceId: pinv?.id, vendor: pinv?.routed?.normalisedVendor || pinv?.vendorName, decision: 'reject', reason, secondsInReview });
+    if (!pinv) return;
+    logDecision({ invoiceId: pinv.id, vendor: pinv.routed?.normalisedVendor || pinv.vendorName, decision: 'reject', reason, secondsInReview });
+    const stage = pinv.stoppedAt || 'validate';
+    setPatched(p => ({ ...p, [pinv.id]: {
+      ...pinv,
+      overallStatus: STATUS.REJECTED,
+      valueAtRisk: 0,
+      stages: { ...pinv.stages, [stage]: mkStage(STATUS.REJECTED, null, [{ severity: 'error', message: `Rejected by reviewer: ${reason}` }]) },
+    } }));
     closeSheet();
   }, [closeSheet]);
 
@@ -464,7 +490,12 @@ export default function App() {
                   onClick={() => { setLifecycleFilter(null); setWorklistFilter(null); setSelectedPipelineId(null); }}>
                   All <span className="ftab-ct">{displayInvoices.length.toLocaleString()}</span>
                 </button>
-                {[['needs_review', 'Needs review'], ['auto_resolved', 'Auto-resolved'], ['passed', 'Passed'], ['failed', 'Failed']].map(([st, label]) => (
+                {[
+                  ['needs_review', 'Needs review'], ['auto_resolved', 'Auto-resolved'], ['passed', 'Passed'], ['failed', 'Failed'],
+                  // Human-action outcomes appear once there's at least one (e.g. after Approve/Reject in the demo).
+                  ...(lifecycleCounts.posted ? [['posted', 'Posted']] : []),
+                  ...(lifecycleCounts.rejected ? [['rejected', 'Rejected']] : []),
+                ].map(([st, label]) => (
                   <button key={st} className={`ftab${lifecycleFilter === st ? ' ftab-on' : ''}`} onClick={() => onLifecycle(st)}>
                     {label} <span className="ftab-ct">{lifecycleCounts[st].toLocaleString()}</span>
                   </button>

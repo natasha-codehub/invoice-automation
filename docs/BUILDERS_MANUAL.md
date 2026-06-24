@@ -12,7 +12,8 @@
 | | |
 |---|---|
 | **Current phase** | **Phase E ✓** (HITL flywheel + provenance drawer, browser-verified) → next candidates are §9 priorities 1/3/4 (real extraction, one real ERP post, a backend) |
-| **Last worked** | 2026-06-23 (Phase E flywheel, then a **Flywheel Impact** panel in the Eval slide-over: counterfactual touch-rate baseline→now + exceptions removed + lines auto-resolved — the moat made *measurable*) |
+| **Last worked** | 2026-06-24 (b) (**document-type variety**: new `docType` taxonomy (`src/pipeline/docTypes.js`) + a Type filter in the queue; relabeled existing samples into PO Invoice / Subscription / Non-PO; added two new **reference documents** — a **Purchase Order** and a **Credit Note** (`src/data/otherDocs.js`, pre-baked via `generateBatch.referenceDocs()`) that are read & extracted with their own generated PDFs (`PURCHASE ORDER` / `CREDIT NOTE` headers, negative amounts) but skip the invoice three-way-match/posting flow. Statement variety already existed (3 Sharpgas segments).) |
+| **Prev** | 2026-06-24 (a) (queue polish: 3-tier ordering floats **native scanned PDFs → samples → synthetic**; the 8 samples now render a **genuine generated PDF** (`src/utils/makeInvoicePdf.js`) *and* carry a full extraction shape, so they open on Extract and are fully inspectable) · 2026-06-23 (Phase E flywheel + Flywheel Impact panel) |
 | **Next action** | **Decide the next §9 move with Natasha.** With the flywheel done, the standing priorities are: (1) real extraction + bounding-box click-to-source, (3) one real ERP post, (4) a backend. (2) the flywheel is now ✓. |
 | **Dev server** | `npm run dev` → http://localhost:5173 |
 | **Verify a change** | run app in browser (system Chrome via playwright-core), screenshot the surface — never "tests pass" |
@@ -206,7 +207,7 @@ full inspector below. Virtualization holds at 1,000 rows.
 - [x] B2. **Field-level confidence** per field (`fieldConfidence` on the 4 baked extractions; low fields flagged red). Human edits set that field's confidence to 100%.
 - [x] B3. **Arithmetic/consistency gate** (`src/pipeline/consistency.js`): Σ line totals = subtotal; subtotal+tax = total; qty×unit = line total. A hard mismatch routes Extract → needs_review regardless of model confidence.
 - [x] B4. **Actions:** Edit field (controlled draft, commits on blur, re-pipes + `human:` trace) · Accept (forces extract auto_resolved + trace) · Re-extract (re-runs the engine, `engine:` trace). All via a `patched` override map in App that re-runs `runPipeline`; the funnel updates live.
-- [x] B5. Empty/failure states: no-source placeholder for sample/synthetic; native-no-key surfaces the error banner.
+- [x] B5. Empty/failure states: native-no-key surfaces the error banner. (Update 2026-06-24: samples no longer fall back to the HTML "reconstructed from extraction" `MockInvoicePage` — they now carry a generated PDF; only the synthetic fill remains source-less, and the source viewer / inspector are gated behind `pinv.extraction` which synthetics don't have.)
 
 **Done when:** ✓ VERIFIED 2026-06-17 — selecting bundled INV-XPEDITED opens the
 inspector defaulted to Extract: PDF iframe (left) + editable fields with confidence

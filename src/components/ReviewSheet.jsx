@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { docTypeMeta } from '../pipeline/docTypes.js';
 import InvoiceStepper from './InvoiceStepper.jsx';
 import ExtractionInspector from './ExtractionInspector.jsx';
 import MappingPanel from './MappingPanel.jsx';
@@ -73,6 +74,7 @@ export default function ReviewSheet({
   useEffect(() => { setRejectOpen(false); setReason(''); setTraceOpen(false); }, [pinv?.id]);
 
   const invNo = pinv?.extraction?.invoiceNumber || pinv?.id;
+  const docLabel = pinv ? docTypeMeta(pinv).label : 'Document';
   const engine = pinv?.extraction?.extractionEngine;
 
   const confirmReject = () => {
@@ -101,7 +103,7 @@ export default function ReviewSheet({
             <div style={{ background: 'var(--accent)', height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', gap: 12 }}>
               <div style={{ color: '#fff', fontFamily: 'var(--mono)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                 <span style={{ flexShrink: 0 }}>📄</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pinv.vendorName} · Invoice {invNo}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pinv.vendorName} · {docLabel} {invNo}</span>
                 {engine && <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.62)', flexShrink: 0 }}>· {engine}</span>}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -123,9 +125,13 @@ export default function ReviewSheet({
                 <MappingPanel pinv={pinv} onResolveLine={onResolveLine} />
               ) : pinv.routed ? (
                 <DetailPanel result={pinv.routed} />
-              ) : (
+              ) : pinv.isSynthetic ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--faint)', fontSize: 13, padding: 24, textAlign: 'center' }}>
                   Synthetic batch invoice — full extraction &amp; validation detail is available for the real invoices (samples + /input) and anything you ingest.
+                </div>
+              ) : (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--faint)', fontSize: 13, padding: 24, textAlign: 'center' }}>
+                  No detailed panel at this stage for this document — see the stage summary above. (Reference documents like purchase orders and credit notes don’t run the invoice three-way-match / posting flow.)
                 </div>
               )}
             </div>

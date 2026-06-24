@@ -20,6 +20,8 @@ export const STATUS = {
   AUTO:    'auto_resolved',
   REVIEW:  'needs_review',
   FAILED:  'failed',
+  POSTED:  'posted',    // a reviewer approved & posted an exception (human-resolved)
+  REJECTED:'rejected',  // a reviewer rejected an exception
   RUNNING: 'running',
   PENDING: 'pending',
 };
@@ -29,6 +31,8 @@ export const STATUS_META = {
   auto_resolved: { label: 'Auto-resolved', icon: '↺', color: '#06b6d4', bg: '#cffafe' },
   needs_review:  { label: 'Needs review',  icon: '⚠', color: '#f59e0b', bg: '#fef9c3' },
   failed:        { label: 'Failed',        icon: '✕', color: '#ef4444', bg: '#fee2e2' },
+  posted:        { label: 'Posted',        icon: '⤤', color: '#0d9488', bg: '#ccfbf1' },
+  rejected:      { label: 'Rejected',      icon: '⊘', color: '#e11d48', bg: '#ffe4e6' },
   running:       { label: 'Running',       icon: '⏳', color: '#6366f1', bg: '#e0e7ff' },
   pending:       { label: 'Not reached',   icon: '·', color: '#94a3b8', bg: '#f1f5f9' },
 };
