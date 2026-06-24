@@ -10,6 +10,24 @@ const BAR_GAP = 20;
 
 const fmtDur = (s) => (s == null ? '—' : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`);
 
+// ── AI usage & cost (modeled) ────────────────────────────────────────────────
+// Only the *reading* step (extraction) calls an LLM — decisions (matching,
+// three-way, validation) are deterministic rules and cost nothing in tokens.
+// Reading runs on a cheap model; figures are modeled on Claude Haiku 4.5 list
+// pricing since the demo uses a stub extractor.
+const READING_MODEL = 'Claude Haiku 4.5';
+const PRICE_IN = 1.0 / 1e6;  // $/input token
+const PRICE_OUT = 5.0 / 1e6; // $/output token
+
+// Per-document extraction token estimate: a page image + prompt in, structured
+// JSON (fields + line items) out. Deterministic so the dashboard is stable.
+function tokensFor(inv) {
+  const lines = inv.extraction?.lineItems?.length ?? inv.lineItems?.length ?? 2;
+  return { input: 1150 + 25 * lines, output: 200 + 60 * lines };
+}
+const fmtTok = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : `${n}`);
+const usd = (n, dp = 2) => `$${n.toFixed(dp)}`;
+
 // ── Section heading ──────────────────────────────────────────────────────────
 function Heading({ title, note }) {
   return (
@@ -167,6 +185,43 @@ function ReviewerImpact({ decisions, life }) {
   );
 }
 
+// ── 3b · AI usage & cost (the running cost, kept off the operator queue) ──────
+function AiUsage({ invoices }) {
+  const ai = useMemo(() => {
+    let inTok = 0, outTok = 0;
+    for (const inv of invoices) { const t = tokensFor(inv); inTok += t.input; outTok += t.output; }
+    const n = invoices.length || 1;
+    const cost = inTok * PRICE_IN + outTok * PRICE_OUT;
+    return { inTok, outTok, total: inTok + outTok, cost, perInvoice: cost / n, avgIn: inTok / n, avgOut: outTok / n, n };
+  }, [invoices]);
+
+  const tiles = [
+    { v: READING_MODEL, label: 'reading model', sub: 'extraction only' },
+    { v: `${Math.round(ai.avgIn).toLocaleString()} / ${Math.round(ai.avgOut).toLocaleString()}`, label: 'tokens per invoice', sub: 'input / output' },
+    { v: fmtTok(ai.total), label: 'tokens this batch', sub: `${fmtTok(ai.inTok)} in · ${fmtTok(ai.outTok)} out` },
+    { v: usd(ai.cost), label: 'est. AI spend', sub: `${usd(ai.perInvoice, 4)} per invoice` },
+  ];
+
+  return (
+    <div>
+      <Heading title="AI usage & cost"
+        note="The running cost of the AI itself — what the model reads, and what that costs per invoice." />
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+        {tiles.map((t) => (
+          <div key={t.label} style={{ flex: '1 1 150px', background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ color: '#0f172a', fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>{t.v}</div>
+            <div style={{ color: '#334155', fontSize: 13, fontWeight: 600, marginTop: 6 }}>{t.label}</div>
+            <div style={{ color: '#64748b', fontSize: 11.5, marginTop: 3 }}>{t.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 12, color: '#64748b', marginTop: 12, lineHeight: 1.6 }}>
+        <b style={{ color: '#475569' }}>Decisions cost $0 in tokens.</b> Matching, the three-way match and validation are deterministic rules — only the reading step calls an LLM, which keeps spend low <i>and</i> the decisions fully auditable. Figures are modeled on {READING_MODEL} list pricing ({usd(PRICE_IN * 1e6)}/M in, {usd(PRICE_OUT * 1e6)}/M out); prompt caching of the shared extraction prompt would reduce it further.
+      </div>
+    </div>
+  );
+}
+
 // ── 4 · Document-type mix ────────────────────────────────────────────────────
 function DocTypeMix({ invoices }) {
   const mix = useMemo(() => {
@@ -306,6 +361,7 @@ export default function EvalDashboard({ flywheel, batch, invoices = [], decision
       <Scorecard batch={batch} life={life} value={value} />
       <BatchOutcome batch={batch} life={life} />
       <ReviewerImpact decisions={decisions} life={life} />
+      <AiUsage invoices={invoices} />
       <FlywheelImpact fw={flywheel} />
       <DocTypeMix invoices={invoices} />
 
