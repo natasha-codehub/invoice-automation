@@ -43,7 +43,9 @@ function inferJurisdiction(inv) {
 }
 
 // ─── Normalisation ───────────────────────────────────────────────────────────
-function normalise(invoice) {
+// Exported so the Phase F extraction-accuracy eval can replay the exact same
+// raw → normalised transform it runs in the live pipeline (no divergence).
+export function normalise(invoice) {
   const corrections = [];
   const corrected = { ...invoice };
 

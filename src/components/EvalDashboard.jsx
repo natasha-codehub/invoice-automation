@@ -3,6 +3,7 @@ import { weeklyEvalData, exceptionByVendor } from '../data/invoices.js';
 import { TOUCHLESS } from '../pipeline/model.js';
 import { docTypeKey, DOC_TYPES } from '../pipeline/docTypes.js';
 import { money } from '../utils/currency.js';
+import { extractionAccuracy, calibration, guardrails, qaSample, shadowVendors } from '../pipeline/evalMetrics.js';
 
 const CHART_H = 170;
 const BAR_W   = 38;
@@ -42,15 +43,17 @@ function Heading({ title, note }) {
 // The north star, the way it's meant to be read: STP never alone — always beside
 // its two guardrails ($-leakage and false-reject), so a rising STP can't hide a
 // rising risk.
-function Scorecard({ batch, life, value }) {
+function Scorecard({ batch, life, value, gr }) {
   if (!batch) return null;
   const pct = batch.stp?.pct ?? 0;
   const openExceptions = life.needs_review;
-  const guardrails = [
-    { ok: true, label: '$-leakage', value: money(0),
-      detail: 'auto-approved-but-wrong — every touchless invoice cleared the consistency gate + three-way match' },
-    { ok: true, label: 'false-reject', value: '0%',
-      detail: 'valid invoices wrongly rejected — every rejection carries a logged fatal reason' },
+  const guardrailRows = [
+    { ok: gr.leakage.ok, label: '$-leakage', value: money(gr.leakage.value),
+      detail: `auto-approved-but-wrong — all ${gr.touchlessCount.toLocaleString()} touchless invoices cleared the consistency gate + three-way match before posting` },
+    { ok: gr.leakage.ok, label: 'exception-escape', value: `${gr.leakage.escapeRate}%`,
+      detail: `bad invoices slipping past the gate — ${gr.leakage.count} of ${gr.touchlessCount.toLocaleString()} touchless carried a blocking issue` },
+    { ok: gr.falseReject.ok, label: 'false-reject', value: `${gr.falseReject.rate}%`,
+      detail: `valid invoices wrongly rejected — every one of ${gr.rejectedCount.toLocaleString()} rejections carries a logged fatal reason` },
   ];
   return (
     <div>
@@ -66,10 +69,13 @@ function Scorecard({ batch, life, value }) {
           </div>
         </div>
         {/* Guardrails */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {guardrails.map((g) => (
-            <div key={g.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', gap: 13, alignItems: 'flex-start' }}>
-              <span style={{ fontSize: 11, fontWeight: 800, color: '#059669', background: '#dcfce7', borderRadius: 6, padding: '3px 8px', flexShrink: 0, marginTop: 1 }}>✓ WITHIN</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {guardrailRows.map((g) => (
+            <div key={g.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 15px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <span style={{ fontSize: 11, fontWeight: 800, flexShrink: 0, marginTop: 1, borderRadius: 6, padding: '3px 8px',
+                color: g.ok ? '#059669' : '#b45309', background: g.ok ? '#dcfce7' : '#fef3c7' }}>
+                {g.ok ? '✓ WITHIN' : '⚠ CHECK'}
+              </span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 700, color: '#1e293b' }}>{g.value}</span>
@@ -335,6 +341,150 @@ function FlywheelImpact({ fw }) {
   );
 }
 
+// ── F1 · Extraction accuracy vs ground truth (the OCR-vs-normalisation thesis) ─
+const Chip = ({ ok }) => (
+  <span style={{ fontSize: 10, fontWeight: 800, borderRadius: 4, padding: '1px 6px',
+    color: ok ? '#047857' : '#b91c1c', background: ok ? '#d1fae5' : '#fee2e2' }}>
+    {ok ? '✓' : '✕'}
+  </span>
+);
+function ExtractionAccuracy() {
+  const acc = useMemo(() => extractionAccuracy(), []);
+  const cal = useMemo(() => calibration(acc.rows), [acc.rows]);
+  const lift = Math.round((acc.normPct - acc.rawPct) * 10) / 10;
+  return (
+    <div>
+      <Heading title="Extraction accuracy — OCR vs normalisation"
+        note={`Golden set of ${BUNDLED_N} verified invoices · ${acc.engine}. Field accuracy as the engine reads it (raw), then after our normalisation. The gap is the moat — the work the OCR layer can't do.`} />
+
+      {/* Headline: raw → normalised */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 14, alignItems: 'stretch', marginBottom: 16 }}>
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '18px 20px' }}>
+          <div style={{ color: '#64748b', fontSize: 12.5, fontWeight: 700 }}>RAW EXTRACTION</div>
+          <div style={{ color: '#475569', fontSize: 40, fontWeight: 800, lineHeight: 1.1 }}>{acc.rawPct}%</div>
+          <div style={{ color: '#94a3b8', fontSize: 12 }}>{acc.rawCorrect}/{acc.total} critical fields correct as read</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', color: '#059669', fontSize: 26, fontWeight: 800 }}>→</div>
+        <div style={{ background: '#ecfdf5', border: '1.5px solid #6ee7b7', borderRadius: 12, padding: '18px 20px' }}>
+          <div style={{ color: '#047857', fontSize: 12.5, fontWeight: 700 }}>AFTER NORMALISATION</div>
+          <div style={{ color: '#059669', fontSize: 40, fontWeight: 800, lineHeight: 1.1 }}>{acc.normPct}%</div>
+          <div style={{ color: '#047857', fontSize: 12 }}>+{lift} pts · {acc.fixedByNorm.length} field{acc.fixedByNorm.length === 1 ? '' : 's'} the OCR got wrong, repaired</div>
+        </div>
+      </div>
+
+      {/* Per-field table */}
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 16 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--border)', color: '#475569', textAlign: 'left' }}>
+              {['Invoice', 'Field', 'Raw read', 'Normalised', 'Ground truth', 'Conf', 'Raw', 'Norm'].map((h) => (
+                <th key={h} style={{ padding: '9px 12px', fontWeight: 700 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody style={{ fontFamily: 'var(--mono)' }}>
+            {acc.rows.map((r, i) => (
+              <tr key={i} style={{ borderTop: i ? '1px solid #f1f5f9' : 'none', background: r.fixedByNorm ? '#f0fdf4' : '#fff' }}>
+                <td style={{ padding: '8px 12px', color: '#64748b', fontFamily: 'var(--sans)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.invoice}</td>
+                <td style={{ padding: '8px 12px', color: '#334155', fontFamily: 'var(--sans)', fontWeight: 600 }}>{r.fieldLabel}</td>
+                <td style={{ padding: '8px 12px', color: r.rawMatch ? '#334155' : '#b91c1c' }}>{String(r.raw)}</td>
+                <td style={{ padding: '8px 12px', color: '#334155' }}>{r.fixedByNorm ? String(r.norm) : '—'}</td>
+                <td style={{ padding: '8px 12px', color: '#64748b' }}>{String(r.gt)}</td>
+                <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{r.confidence != null ? `${Math.round(r.confidence * 100)}%` : '—'}</td>
+                <td style={{ padding: '8px 12px' }}><Chip ok={r.rawMatch} /></td>
+                <td style={{ padding: '8px 12px' }}><Chip ok={r.normMatch} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Confidence calibration */}
+      <div style={{ color: '#475569', fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>Confidence calibration</div>
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 18px 12px' }}>
+        {cal.map((b) => (
+          <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0', borderTop: '1px solid #f1f5f9' }}>
+            <span style={{ width: 110, fontFamily: 'var(--mono)', fontSize: 12.5, color: '#475569' }}>{b.label}</span>
+            <span style={{ width: 70, fontSize: 12, color: '#94a3b8' }}>{b.count} field{b.count === 1 ? '' : 's'}</span>
+            <div style={{ flex: 1, height: 12, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${b.accuracy ?? 0}%`, background: b.accuracy === 100 ? '#059669' : b.accuracy >= 70 ? '#d97706' : '#dc2626', borderRadius: 6 }} />
+            </div>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 12.5, fontWeight: 700, color: '#334155', minWidth: 70, textAlign: 'right' }}>
+              {b.accuracy == null ? '—' : `${b.accuracy}% acc`}
+            </span>
+          </div>
+        ))}
+        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 10, lineHeight: 1.5 }}>
+          The engine is least accurate exactly where it reports low confidence — so the confidence score is trustworthy, and the low-confidence fields are precisely the ones normalisation repairs. Swap the Layer-1 engine and this table re-runs on the same golden set: that's how you compare OCR engines apples-to-apples.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── F3 · Auto-approval controls (random-QA + new-vendor shadow mode) ──────────
+function AutoApprovalControls({ invoices }) {
+  const qa = useMemo(() => qaSample(invoices, 5), [invoices]);
+  const shadow = useMemo(() => shadowVendors(invoices), [invoices]);
+  return (
+    <div>
+      <Heading title="Auto-approval controls"
+        note="Straight-through is not unwatched. A random slice of auto-approved invoices is pulled for QA, and any vendor with no payment history runs in shadow mode." />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+
+        {/* Random-QA sampling */}
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>Random-QA sampling</div>
+          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12, lineHeight: 1.5 }}>
+            {qa.ratePct}% of {qa.autoApproved.toLocaleString()} auto-approved invoices spot-checked by a person.
+          </div>
+          <div style={{ display: 'flex', gap: 18, marginBottom: 12 }}>
+            <div><div style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 800, color: '#4338ca' }}>{qa.sampledCount.toLocaleString()}</div><div style={{ fontSize: 11.5, color: '#64748b' }}>pulled for QA</div></div>
+            <div><div style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 800, color: '#4338ca' }}>{money(qa.sampleValue)}</div><div style={{ fontSize: 11.5, color: '#64748b' }}>value sampled</div></div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {qa.sample.map((s) => (
+              <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, fontFamily: 'var(--mono)', color: '#475569', borderTop: '1px solid #f1f5f9', padding: '4px 0' }}>
+                <span style={{ color: '#94a3b8' }}>{s.id}</span>
+                <span style={{ flex: 1, margin: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.vendor}</span>
+                <span>{money(s.total)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* New-vendor shadow mode */}
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>New-vendor shadow mode</div>
+          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12, lineHeight: 1.5 }}>
+            Vendors not on the approved master — flagged because no payment history is where bank-change fraud and bad master data hide.
+          </div>
+          <div style={{ display: 'flex', gap: 18, marginBottom: 12 }}>
+            <div><div style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 800, color: '#b45309' }}>{shadow.vendorCount}</div><div style={{ fontSize: 11.5, color: '#64748b' }}>new vendors</div></div>
+            <div><div style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 800, color: '#b45309' }}>{shadow.flagged.toLocaleString()}</div><div style={{ fontSize: 11.5, color: '#64748b' }}>invoices in shadow</div></div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {shadow.vendors.slice(0, 6).map((v) => (
+              <div key={v.vendor} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: '#475569', borderTop: '1px solid #f1f5f9', padding: '4px 0' }}>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: '#b45309', background: '#fef3c7', borderRadius: 4, padding: '1px 5px', marginRight: 6 }}>SHADOW</span>
+                  {v.vendor}
+                </span>
+                <span style={{ fontFamily: 'var(--mono)', color: '#94a3b8' }}>{v.count}×</span>
+              </div>
+            ))}
+            {shadow.vendorCount === 0 && (
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>Every vendor in the batch is on the approved master.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const BUNDLED_N = 4;
+
 export default function EvalDashboard({ flywheel, batch, invoices = [], decisions = [] }) {
   const life = useMemo(() => {
     const c = { passed: 0, auto_resolved: 0, needs_review: 0, failed: 0, posted: 0, rejected: 0 };
@@ -352,15 +502,19 @@ export default function EvalDashboard({ flywheel, batch, invoices = [], decision
     return { touchless, posted };
   }, [invoices]);
 
+  const gr = useMemo(() => guardrails(invoices, decisions), [invoices, decisions]);
+
   const maxVendorCount = Math.max(...exceptionByVendor.map(v => v.count));
   const svgWidth = weeklyEvalData.length * (BAR_W + BAR_GAP) + BAR_GAP;
 
   return (
     <div style={{ padding: '28px 36px', maxWidth: 920, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 36 }}>
 
-      <Scorecard batch={batch} life={life} value={value} />
+      <Scorecard batch={batch} life={life} value={value} gr={gr} />
+      <ExtractionAccuracy />
       <BatchOutcome batch={batch} life={life} />
       <ReviewerImpact decisions={decisions} life={life} />
+      <AutoApprovalControls invoices={invoices} />
       <AiUsage invoices={invoices} />
       <FlywheelImpact fw={flywheel} />
       <DocTypeMix invoices={invoices} />
