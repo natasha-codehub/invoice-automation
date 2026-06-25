@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { weeklyEvalData, exceptionByVendor } from '../data/invoices.js';
 import { TOUCHLESS } from '../pipeline/model.js';
-import { docTypeKey, DOC_TYPES } from '../pipeline/docTypes.js';
 import { money } from '../utils/currency.js';
 import { extractionAccuracy, calibration, guardrails, qaSample, shadowVendors } from '../pipeline/evalMetrics.js';
 
@@ -223,38 +222,6 @@ function AiUsage({ invoices }) {
       </div>
       <div style={{ fontSize: 12, color: '#64748b', marginTop: 12, lineHeight: 1.6 }}>
         <b style={{ color: '#475569' }}>Decisions cost $0 in tokens.</b> Matching, the three-way match and validation are deterministic rules — only the reading step calls an LLM, which keeps spend low <i>and</i> the decisions fully auditable. Figures are modeled on {READING_MODEL} list pricing ({usd(PRICE_IN * 1e6)}/M in, {usd(PRICE_OUT * 1e6)}/M out); prompt caching of the shared extraction prompt would reduce it further.
-      </div>
-    </div>
-  );
-}
-
-// ── 4 · Document-type mix ────────────────────────────────────────────────────
-function DocTypeMix({ invoices }) {
-  const mix = useMemo(() => {
-    const m = {};
-    for (const inv of invoices) { const k = docTypeKey(inv); m[k] = (m[k] || 0) + 1; }
-    return Object.entries(m).sort((a, b) => b[1] - a[1]);
-  }, [invoices]);
-  const total = invoices.length || 1;
-  const max = Math.max(...mix.map(([, n]) => n));
-  return (
-    <div>
-      <Heading title="Document-type mix"
-        note="One queue, every shape AP receives — not just clean PO invoices." />
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 18px 12px' }}>
-        {mix.map(([k, n]) => {
-          const meta = DOC_TYPES[k] || { label: k, fg: '#475569' };
-          return (
-            <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderTop: '1px solid #f1f5f9' }}>
-              <span style={{ width: 130, fontSize: 12.5, color: '#334155', fontWeight: 600 }}>{meta.label}</span>
-              <div style={{ flex: 1, height: 12, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${(n / max) * 100}%`, background: meta.fg, borderRadius: 6, opacity: 0.85 }} />
-              </div>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 12.5, fontWeight: 700, color: meta.fg, minWidth: 54, textAlign: 'right' }}>{n.toLocaleString()}</span>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#94a3b8', minWidth: 42, textAlign: 'right' }}>{((n / total) * 100).toFixed(1)}%</span>
-            </div>
-          );
-        })}
       </div>
     </div>
   );
@@ -517,7 +484,6 @@ export default function EvalDashboard({ flywheel, batch, invoices = [], decision
       <AutoApprovalControls invoices={invoices} />
       <AiUsage invoices={invoices} />
       <FlywheelImpact fw={flywheel} />
-      <DocTypeMix invoices={invoices} />
 
       {/* Historical STP trend */}
       <div>
