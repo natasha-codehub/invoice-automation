@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { docTypeMeta } from '../pipeline/docTypes.js';
+import { docTypeMeta, docTypeKey } from '../pipeline/docTypes.js';
 import InvoiceStepper from './InvoiceStepper.jsx';
 import ExtractionInspector from './ExtractionInspector.jsx';
 import MappingPanel from './MappingPanel.jsx';
@@ -21,6 +21,10 @@ export default function ReviewSheet({
   onEditField, onReextract, onAccept, onResolveLine, onApprove, onReject, onClose,
 }) {
   const open = !!pinv;
+  // Reference documents (purchase orders, credit notes) are extracted & filed but
+  // never run the invoice three-way-match / posting flow — so "Approve & Post to
+  // ERP" / "Reject" don't apply to them. Show their disposition instead.
+  const isReference = pinv ? (docTypeKey(pinv) === 'purchase_order' || docTypeKey(pinv) === 'credit_note') : false;
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [traceOpen, setTraceOpen] = useState(false);
@@ -61,9 +65,10 @@ export default function ReviewSheet({
       if (!open || rejectOpen || traceOpen) return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       const k = e.key.toLowerCase();
+      if (k === 'p') { e.preventDefault(); setTraceOpen(true); return; }
+      if (isReference) return; // reference docs don't post/reject — only the trace shortcut applies
       if (k === 'a') { e.preventDefault(); approve(); }
       else if (k === 'r') { e.preventDefault(); setRejectOpen(true); }
-      else if (k === 'p') { e.preventDefault(); setTraceOpen(true); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
@@ -107,11 +112,19 @@ export default function ReviewSheet({
                 {engine && <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.62)', flexShrink: 0 }}>· {engine}</span>}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                <span title="Time in review (time-per-exception)" style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'var(--mono)', fontSize: 11.5 }}>⏱ {mmss}</span>
+                {!isReference && <span title="Time in review (time-per-exception)" style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'var(--mono)', fontSize: 11.5 }}>⏱ {mmss}</span>}
                 <button className="rs-ghost-w" onClick={() => setTraceOpen(true)} title="Provenance trace (P)">🧾 Trace</button>
                 {pinv.extraction && <button className="rs-ghost-w" onClick={onReextract} disabled={busy}>↻ Re-run</button>}
-                <button className="rs-ghost-w" onClick={() => setRejectOpen(true)} title="Reject (R)">Reject</button>
-                <button className="rs-approve" onClick={approve} title="Approve (A)">↗ Approve &amp; Post to ERP</button>
+                {isReference ? (
+                  <span title="Reference document — filed, not posted" style={{ color: 'rgba(255,255,255,0.85)', fontFamily: 'var(--mono)', fontSize: 11.5, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 6, padding: '5px 10px' }}>
+                    Reference · filed, no posting
+                  </span>
+                ) : (
+                  <>
+                    <button className="rs-ghost-w" onClick={() => setRejectOpen(true)} title="Reject (R)">Reject</button>
+                    <button className="rs-approve" onClick={approve} title="Approve (A)">↗ Approve &amp; Post to ERP</button>
+                  </>
+                )}
                 <button className="rs-x" onClick={onClose} aria-label="Close review">×</button>
               </div>
             </div>
@@ -143,7 +156,11 @@ export default function ReviewSheet({
                 {pinv.extraction && <button className="rs-ghost" onClick={onReextract} disabled={busy}>↻ Re-run extraction</button>}
                 <button className="rs-ghost" onClick={onClose}>⇄ Back to queue</button>
               </div>
-              <button className="rs-approve-lg" onClick={approve}>↗ Approve &amp; Post to ERP</button>
+              {isReference ? (
+                <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>Reference document — filed for matching; not posted to the ledger.</span>
+              ) : (
+                <button className="rs-approve-lg" onClick={approve}>↗ Approve &amp; Post to ERP</button>
+              )}
             </div>
           </>
         )}

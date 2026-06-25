@@ -11,10 +11,10 @@
 
 | | |
 |---|---|
-| **Current phase** | **Phase F ✓** (eval & guardrail metrics — F1/F2/F3 all browser-verified) → only **Phase G (polish/docs/narrative)** remains before the §9 big moves (real extraction, one real ERP post, a backend) |
-| **Last worked** | 2026-06-25 — **Phase F complete** (not yet committed at time of writing; see git log). New `src/pipeline/evalMetrics.js` (pure, deterministic): **F1** extraction accuracy vs ground truth (raw 87.5% → 100% normalised) + confidence calibration (50/100/100 bins), **F2** computed guardrail board ($-leakage / exception-escape / false-reject, all from the live batch), **F3** random-QA sampling + new-vendor shadow mode. `validationEngine.normalise` now exported (eval replays the live transform). `EvalDashboard.jsx` gained `ExtractionAccuracy` + `AutoApprovalControls` sections and a computed `Scorecard`. Vercel Deployment Protection **flipped OFF 2026-06-25** (live URL now public — see memory [[demo-state]]). |
-| **Prev** | 2026-06-24 (c) demo-readiness pass (deterministic batch STP≈81.6%, Approve&Post posts, USD everywhere, Eval page rebuilt + AI usage/cost) · (b) doc-type variety + reference docs + Type filter · (a) real generated source PDFs · 2026-06-23 (Phase E flywheel) |
-| **Next action** | **Phase G** (polish/docs/narrative): G1 empty/error/loading sweep + perf at 1000+; G2 README + Obsidian vault staged-pipeline story; G3 interview narrative. Optional polish still open: hide Approve/Reject on PO/Credit reference docs; fix the pre-existing `mapping.js:192` lint error. Then the standing §9 moves: real extraction + click-to-source, one real ERP post, a backend. (Demo is fully prepped — collateral links + now-public Vercel URL in memory [[demo-state]].) |
+| **Current phase** | **Phase G ✓** (polish/docs/narrative — browser-verified). **All phases A–G complete.** What remains is the §9 "gap to world-class" big moves (real extraction + click-to-source, one real ERP post, a backend) — work beyond the phased plan. |
+| **Last worked** | 2026-06-25 — **Phase G complete** (see git log). G1: Worklist empty state + Approve/Reject hidden on reference docs + `mapping.js:192` lint error fixed (lint now fully clean). G2: README rewritten for the current system (Obsidian vault note still pending the go-ahead to edit the external `NatashaProductBrain`). G3: `docs/NARRATIVE.md` added (4-beat interview narrative); deleted dead `StoryTab.jsx` + `InvoiceList.jsx`. Earlier same day: **Phase F** (eval & guardrails — `src/pipeline/evalMetrics.js`). Vercel Deployment Protection flipped OFF (live URL public — memory [[demo-state]]). |
+| **Prev** | 2026-06-25 Phase F (F1 extraction accuracy 87.5%→100% + calibration · F2 computed guardrail board · F3 random-QA + shadow mode) · 2026-06-24 demo-readiness pass · 2026-06-23 Phase E flywheel |
+| **Next action** | **No phases left.** The standing §9 moves are the next real work, in priority order: (1) real extraction + bounding-box click-to-source; (2) one real ERP integration so Route/"Approve & Post" actually posts; (3) a backend (persistence + audit retention + auth). Loose end: update the Obsidian `Invoice Automation.md` vault note (awaiting OK). Demo is fully prepped (collateral + now-public Vercel URL in memory [[demo-state]]). |
 | **Dev server** | `npm run dev` → http://localhost:5173 |
 | **Verify a change** | run app in browser (system Chrome via playwright-core), screenshot the surface — never "tests pass" |
 
@@ -265,10 +265,14 @@ Accept action. Tabs reordered: **Batch Pipeline first, Invoice Processor second.
 
 > **Known shallow edges (revisit later):** F3 is **surfaced, not yet routed** — shadow-mode is a flag/metric in the Eval page; it doesn't (yet) hold a new-vendor invoice out of STP (would shift the tuned demo STP number). Wiring shadow-mode into `runPipeline` routing is the deeper follow-up. Extraction accuracy runs the Demo engine only (Native needs a key); the per-engine comparison is structurally ready but unpopulated. Guardrails are honestly $0/0% by construction (the deterministic gate guarantees it) — they're computed so they'd move on a regression, not theatre.
 
-### Phase G — Polish, docs, narrative
-- [ ] G1. Empty/error/loading across all stages; perf check at 1000+ (virtualization holds).
-- [ ] G2. Update `README.md` + Obsidian `Invoice Automation.md` with the staged-pipeline story.
-- [ ] G3. Interview narrative: metric-first, OCR-agnostic moat, the flywheel, auditability.
+### Phase G — Polish, docs, narrative ✓ (2026-06-25, browser-verified)
+- [x] G1. Empty/error/loading sweep + perf. Added a **Worklist empty state** (was a blank virtualized area on a 0-match filter combo) with a "Clear filters" affordance; **hid Approve/Reject on reference documents** (PO/credit note — they file, they don't post: action bar shows "Reference · filed, no posting", footer note instead of "Approve & Post", and the A/R keyboard shortcuts are gated). Fixed the long-standing `mapping.js:192` lint error (dropped the unused `mapping` param from `threeWayMatch` + its one caller) — **`npm run lint` is now fully clean (0 problems)**. Perf at 1,000 rows still holds (ResizeObserver virtualization). extractError banner + isExtracting progress bar already present.
+- [x] G2. **README rewritten** for the current system (4-stage pipeline, mapping, segmentation, flywheel, eval/guardrails, the OCR-agnostic moat thesis, USD, React 19 / `claude-opus-4-8`, correct dir map). Was describing the retired 3-bucket / 7-check model with a wrong model id. **Obsidian `Invoice Automation.md` update is the one open sub-item** (external vault — awaiting the go-ahead to edit `…/NatashaProductBrain`).
+- [x] G3. **`docs/NARRATIVE.md`** added — the interview/demo narrative in four beats (metric-first / OCR-agnostic moat / learning flywheel / auditability), each tied to something on screen, with an honest §9-gaps close. Deleted the dead, stale-narrative `StoryTab.jsx` + `InvoiceList.jsx` (both unimported since the single-page redesign; they still told the old 38→91 rules story).
+
+**Done when:** ✓ VERIFIED 2026-06-25 (browser, no console errors) — empty state renders "Nothing in this view · No Purchase Order documents…" with Clear filters; the Purchase Order review sheet shows "Reference · filed, no posting" (no Approve/Reject); build + lint clean; README + NARRATIVE reflect the current system.
+
+> **Known shallow edge:** when a type filter is set then the lifecycle tab is switched so that type vanishes, the `<select>` visually falls back to "All types" while the filter still applies (empty-state message stays accurate; "Clear filters" resets it). Cosmetic, left as-is.
 
 ---
 

@@ -141,6 +141,25 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
 
       {/* Virtualized rows */}
       <div ref={viewRef} data-wl-scroller onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
+        {sorted.length === 0 ? (
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 32, textAlign: 'center', color: 'var(--muted)' }}>
+            <div style={{ fontSize: 30, opacity: 0.5 }}>🗂️</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Nothing in this view</div>
+            <div style={{ fontSize: 12.5, maxWidth: 360, lineHeight: 1.5 }}>
+              {filter
+                ? `No documents are at ${STAGE_LABELS[filter.stage]} · ${STATUS_META[filter.status].label}.`
+                : typeFilter !== 'all'
+                  ? `No ${DOC_TYPES[typeFilter]?.label || 'matching'} documents in the current selection.`
+                  : 'No documents match the current filters.'}
+            </div>
+            {(filter || typeFilter !== 'all') && (
+              <button onClick={() => { setTypeFilter('all'); onClearFilter?.(); }}
+                style={{ marginTop: 4, fontSize: 12, color: 'var(--accent)', background: 'none', border: '1px solid var(--border2)', borderRadius: 7, padding: '5px 12px' }}>
+                Clear filters
+              </button>
+            )}
+          </div>
+        ) : (
         <div style={{ height: sorted.length * ROW_H, position: 'relative' }}>
           {visible.map((inv, i) => {
             const idx = start + i;
@@ -214,6 +233,7 @@ export default function Worklist({ invoices, totalCount, selectedId, onSelect, f
             );
           })}
         </div>
+        )}
       </div>
 
       <style>{`

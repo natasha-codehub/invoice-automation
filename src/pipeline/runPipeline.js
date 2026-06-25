@@ -125,7 +125,7 @@ export function runPipeline(invoice, tolerance = 2, batchId = 'batch', opts = {}
     if (FLOW_ON.has(stages.extract.status)) {
       routed = routeInvoice(invoice, tolerance);
       mapping = mapInvoice(invoice, routed.normalisedVendor, { ignoreLearned: opts.ignoreLearned });
-      threeWay = threeWayMatch(invoice, routed.normalisedPO, mapping);
+      threeWay = threeWayMatch(invoice, routed.normalisedPO);
       stages.validate = validateStage(invoice, routed, mapping, threeWay);
       if (FLOW_ON.has(stages.validate.status)) {
         stages.route = routeStage(routed);

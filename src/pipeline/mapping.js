@@ -181,7 +181,7 @@ export function mapInvoice(invoice, vendor, opts = {}) {
 }
 
 /**
- * threeWayMatch(invoice, normalizedPO, mapping) → reconciles PO ↔ goods receipt ↔
+ * threeWayMatch(invoice, normalizedPO) → reconciles PO ↔ goods receipt ↔
  * invoice quantities. The Haun (Scranton) 143/200 partial-ship surfaces here.
  *
  * status: matched | partial | over_billed | no_gr
@@ -189,7 +189,7 @@ export function mapInvoice(invoice, vendor, opts = {}) {
  *   - over_billed  → invoiced > received (billed more than arrived) — leakage risk
  *   - no_gr        → receiving has no record for this PO (informational)
  */
-export function threeWayMatch(invoice, normalizedPO, mapping) {
+export function threeWayMatch(invoice, normalizedPO) {
   const gr = getGoodsReceipt(normalizedPO);
   if (!gr) {
     return { po: normalizedPO || null, status: 'no_gr', label: 'No goods-receipt record',
