@@ -16,7 +16,7 @@ import ReviewSheet from './components/ReviewSheet.jsx';
 
 const TOLERANCES = [1, 2, 3, 5];
 const BATCH_ID = 'B-2026-0617';
-const SYNTH_COUNT = 983; // + 15 real (12 invoices + 3 statement segments) + 2 reference docs (PO, credit note) = a 1,000-doc batch
+const SYNTH_COUNT = 1018; // + 15 real (12 invoices + 3 statement segments) + 2 reference docs (PO, credit note) = a 1,035-doc batch
 
 export default function App() {
   const [tolerance, setTolerance] = useState(2);
